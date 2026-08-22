@@ -1,0 +1,5 @@
+# AKZQ.Creation Robots.txt
+User-agent: *
+Allow: /
+
+Sitemap: https://akzqcreation.com/sitemap.xml

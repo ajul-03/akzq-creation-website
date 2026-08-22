@@ -1,0 +1,86 @@
+/* ==========================================================================
+   AKZQ.CREATION — ANIMATIONS & MICRO-INTERACTIONS
+   ========================================================================== */
+
+/* Fade-in & Slide-up Reveal */
+.fade-in {
+  animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.slide-up {
+  animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Floating animation for hero elements */
+.floating-element {
+  animation: floating 4s ease-in-out infinite alternate;
+}
+
+@keyframes floating {
+  0% {
+    transform: translateY(0px);
+  }
+  100% {
+    transform: translateY(-8px);
+  }
+}
+
+/* Subtle pulse for accent indicators */
+.pulse-indicator {
+  position: relative;
+}
+
+.pulse-indicator::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--accent);
+  opacity: 0.4;
+  animation: pulseAura 2.2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+  z-index: -1;
+}
+
+@keyframes pulseAura {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.8);
+    opacity: 0;
+  }
+}
+
+/* Accordion transition helper */
+.accordion-content {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}

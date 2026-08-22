@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio & Case Studies — AKZQ.Creation | Transparent Design Standards</title>
+  <meta name="description" content="Explore AKZQ.Creation's concept case studies and design standards across branding, high-speed web development, local SEO, and media production for North Malabar businesses.">
+  <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
+  
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/animations.css">
+  <style>
+    .portfolio-filters {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 44px;
+    }
+    .portfolio-filter-btn {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border-light);
+      padding: 8px 18px;
+      border-radius: var(--radius-full);
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+    .portfolio-filter-btn:hover, .portfolio-filter-btn.active {
+      background: var(--accent);
+      color: #FFFFFF;
+      border-color: var(--accent);
+      box-shadow: var(--shadow-accent);
+    }
+    /* Modal styles */
+    .project-modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(17, 17, 22, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .project-modal-container {
+      background: #FFFFFF;
+      border-radius: var(--radius-xl);
+      max-width: 720px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 36px;
+      position: relative;
+      box-shadow: var(--shadow-lg);
+      animation: modalSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalSlide {
+      from { opacity: 0; transform: translateY(20px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .modal-close-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: var(--bg-tertiary);
+      border: none;
+      border-radius: var(--radius-full);
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-primary);
+      transition: all var(--transition-fast);
+    }
+    .modal-close-btn:hover {
+      background: var(--accent);
+      color: #FFFFFF;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container nav-wrapper">
+      <a href="index.html" class="brand-logo" aria-label="AKZQ.Creation Home">
+        <img src="assets/images/logo.svg" alt="AKZQ.Creation Logo" width="180" height="42">
+      </a>
+
+      <nav class="nav-menu" aria-label="Main Navigation">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">About</a>
+        
+        <div class="nav-item-dropdown">
+          <a href="services.html" class="nav-link">
+            Services
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </a>
+          <div class="nav-dropdown-menu">
+            <a href="branding-identity.html" class="dropdown-link">
+              <span class="dropdown-link-title">Branding &amp; Identity</span>
+              <span class="dropdown-link-desc">Logos, visual guidelines, and brand systems</span>
+            </a>
+            <a href="web-design-development.html" class="dropdown-link">
+              <span class="dropdown-link-title">Web Design &amp; Development</span>
+              <span class="dropdown-link-desc">High-speed, custom, conversion-focused websites</span>
+            </a>
+            <a href="digital-marketing-seo.html" class="dropdown-link">
+              <span class="dropdown-link-title">Digital Marketing &amp; SEO</span>
+              <span class="dropdown-link-desc">High-ROI campaigns and organic visibility</span>
+            </a>
+            <a href="media-content-production.html" class="dropdown-link">
+              <span class="dropdown-link-title">Media &amp; Content Production</span>
+              <span class="dropdown-link-desc">Commercial photo, reels, and video storytelling</span>
+            </a>
+            <a href="local-seo.html" class="dropdown-link">
+              <span class="dropdown-link-title">Local SEO</span>
+              <span class="dropdown-link-desc">Dominate Google Maps in Kannur &amp; Thalassery</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="nav-item-dropdown">
+          <a href="#" class="nav-link">
+            Locations
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </a>
+          <div class="nav-dropdown-menu">
+            <a href="kannur.html" class="dropdown-link">
+              <span class="dropdown-link-title">Kannur Agency</span>
+              <span class="dropdown-link-desc">Serving South Bazaar, Fort Road &amp; business hubs</span>
+            </a>
+            <a href="thalassery.html" class="dropdown-link">
+              <span class="dropdown-link-title">Thalassery Agency</span>
+              <span class="dropdown-link-desc">Serving Logan Street, Court Road &amp; retail clusters</span>
+            </a>
+          </div>
+        </div>
+
+        <a href="portfolio.html" class="nav-link active">Portfolio</a>
+        <a href="blog.html" class="nav-link">Blog</a>
+        <a href="faq.html" class="nav-link">FAQ</a>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="location-switcher">
+          <a href="kannur.html">Kannur</a>
+          <a href="thalassery.html">Thalassery</a>
+        </div>
+        <a href="contact.html" class="btn btn-primary btn-sm">Get a Free Quote</a>
+        <button class="mobile-toggle" aria-label="Toggle navigation menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div class="mobile-nav" aria-label="Mobile Navigation">
+    <a href="index.html" class="nav-link">Home</a>
+    <a href="about.html" class="nav-link">About Us</a>
+    <div style="font-weight: 600; font-size: 1rem; color: var(--text-primary); margin-top: 8px;">Services</div>
+    <div class="mobile-submenu">
+      <a href="branding-identity.html">Branding &amp; Identity</a>
+      <a href="web-design-development.html">Web Design &amp; Development</a>
+      <a href="digital-marketing-seo.html">Digital Marketing &amp; SEO</a>
+      <a href="media-content-production.html">Media &amp; Content Production</a>
+      <a href="local-seo.html">Local SEO</a>
+    </div>
+    <div style="font-weight: 600; font-size: 1rem; color: var(--text-primary); margin-top: 8px;">Locations</div>
+    <div class="mobile-submenu">
+      <a href="kannur.html">Kannur Agency Hub</a>
+      <a href="thalassery.html">Thalassery Agency Hub</a>
+    </div>
+    <a href="portfolio.html" style="color: var(--accent); font-weight: 600;">Portfolio</a>
+    <a href="blog.html" class="nav-link">Blog</a>
+    <a href="faq.html" class="nav-link">FAQ</a>
+    <a href="contact.html" class="btn btn-primary" style="margin-top: 16px;">Get a Free Quote</a>
+  </div>
+
+  <!-- HERO -->
+  <section class="hero-section" style="padding-bottom: 30px;">
+    <div class="container text-center" style="max-width: 820px;">
+      <div class="eyebrow">Honest Transparency Pledge</div>
+      <h1 style="margin-bottom: 18px;">Case Studies &amp; Concept Frameworks</h1>
+      <p class="text-lead">
+        We never fabricate client results, inflated metrics, or fake testimonials. Below are clearly labeled concept design projects tailored to real North Malabar business sectors. Click any project to inspect the exact scope.
+      </p>
+    </div>
+  </section>
+
+  <!-- PORTFOLIO SECTION -->
+  <section class="section" style="padding-top: 20px;">
+    <div class="container">
+      <!-- Filter Tabs -->
+      <div class="portfolio-filters">
+        <button class="portfolio-filter-btn active" data-filter="all">All Disciplines</button>
+        <button class="portfolio-filter-btn" data-filter="branding">Branding &amp; Identity</button>
+        <button class="portfolio-filter-btn" data-filter="web">Web Design &amp; Dev</button>
+        <button class="portfolio-filter-btn" data-filter="seo">Digital Marketing &amp; SEO</button>
+        <button class="portfolio-filter-btn" data-filter="media">Media Production</button>
+      </div>
+
+      <!-- Portfolio Grid -->
+      <div class="portfolio-grid">
+        <!-- Card 1 -->
+        <div class="portfolio-card" data-category="branding">
+          <div class="portfolio-image" style="background: linear-gradient(135deg, #FFF3EB 0%, #FFE0D1 100%);">
+            <span class="badge badge-concept portfolio-concept-pill">Concept Project</span>
+            <svg width="74" height="74" viewBox="0 0 24 24" fill="none" stroke="#FF6A2B" stroke-width="1.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+          </div>
+          <div class="portfolio-body">
+            <div class="portfolio-category">Branding &amp; Packaging</div>
+            <h3 class="portfolio-title">Malabar Heritage Roasters</h3>
+            <p class="portfolio-desc">Brand strategy, artisanal packaging system, and typography suite for a regional specialty coffee roastery in North Malabar.</p>
+            <div class="portfolio-meta-tags" style="margin-bottom: 18px;">
+              <span class="portfolio-tag">Brand Identity</span>
+              <span class="portfolio-tag">Coffee Packaging</span>
+              <span class="portfolio-tag">Vector Suite</span>
+            </div>
+            <a href="#" class="btn btn-outline btn-sm view-case-study-btn" 
+               data-title="Malabar Heritage Roasters" 
+               data-category-name="Branding & Packaging"
+               data-challenge="Regional coffee brands struggle to differentiate against mass-market commercial blends without distinctive premium packaging and heritage positioning."
+               data-solution="Created an artisanal visual identity incorporating Malabar colonial coffee trade motifs, earthy Pantone tones, and high-contrast typography."
+               data-deliverables="Logo Wordmark & Icon | Custom 250g Pouch Packaging Dielines | Brand Style Guide PDF | Social Media Stationery Kit">
+              Inspect Scope Breakdown →
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="portfolio-card" data-category="web">
+          <div class="portfolio-image" style="background: linear-gradient(135deg, #F0F4F8 0%, #DCE6F1 100%);">
+            <span class="badge badge-concept portfolio-concept-pill">Concept Project</span>
+            <svg width="74" height="74" viewBox="0 0 24 24" fill="none" stroke="#15151A" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
+          </div>
+          <div class="portfolio-body">
+            <div class="portfolio-category">Web Design &amp; Local SEO</div>
+            <h3 class="portfolio-title">Logan Street Fashion Collective</h3>
+            <p class="portfolio-desc">High-speed catalog website, Google Maps local pack architecture, and localized ad strategy for a multi-designer boutique in Thalassery.</p>
+            <div class="portfolio-meta-tags" style="margin-bottom: 18px;">
+              <span class="portfolio-tag">Mobile First UX</span>
+              <span class="portfolio-tag">Thalassery Local SEO</span>
+              <span class="portfolio-tag">WhatsApp Funnel</span>
+            </div>
+            <a href="#" class="btn btn-outline btn-sm view-case-study-btn" 
+               data-title="Logan Street Fashion Collective" 
+               data-category-name="Web Design & Local SEO"
+               data-challenge="Logan Street retailers rely heavily on walk-ins and miss out on shoppers searching on mobile phones within Thalassery."
+               data-solution="Built an ultra-fast mobile catalog website with direct WhatsApp inquiry buttons and optimized Google Business Profile for Logan Street keywords."
+               data-deliverables="Mobile-First Web Catalog | Sub-1.2s Load Speed Optimization | Logan Street Local Map SEO | Automated WhatsApp Inquiry Leads">
+              Inspect Scope Breakdown →
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="portfolio-card" data-category="seo">
+          <div class="portfolio-image" style="background: linear-gradient(135deg, #F5F3FF 0%, #E0DCFE 100%);">
+            <span class="badge badge-concept portfolio-concept-pill">Concept Project</span>
+            <svg width="74" height="74" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+          </div>
+          <div class="portfolio-body">
+            <div class="portfolio-category">Digital Marketing &amp; Export Lead Gen</div>
+            <h3 class="portfolio-title">Kannur Weaves &amp; Lifestyle</h3>
+            <p class="portfolio-desc">Modern digital revival campaign for traditional handloom exporters with international buyer inquiry pipelines and Google B2B search ads.</p>
+            <div class="portfolio-meta-tags" style="margin-bottom: 18px;">
+              <span class="portfolio-tag">B2B Lead Gen</span>
+              <span class="portfolio-tag">Kannur Handloom</span>
+              <span class="portfolio-tag">Google Search Ads</span>
+            </div>
+            <a href="#" class="btn btn-outline btn-sm view-case-study-btn" 
+               data-title="Kannur Weaves & Lifestyle" 
+               data-category-name="Digital Marketing & SEO"
+               data-challenge="Heritage handloom manufacturers in Kannur need a modern digital presence to attract export buyers from the UAE, Europe, and US."
+               data-solution="Designed an international B2B digital showroom backed by targeted Google Search ad funnels targeting wholesale textile buyers."
+               data-deliverables="B2B Export Web Showroom | Google Search Ads Campaign Setup | International Sample Request Funnel | Live Analytics Dashboard">
+              Inspect Scope Breakdown →
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="portfolio-card" data-category="web">
+          <div class="portfolio-image" style="background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);">
+            <span class="badge badge-concept portfolio-concept-pill">Concept Project</span>
+            <svg width="74" height="74" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          </div>
+          <div class="portfolio-body">
+            <div class="portfolio-category">Web Development &amp; Local SEO</div>
+            <h3 class="portfolio-title">North Malabar Health &amp; Diagnostics</h3>
+            <p class="portfolio-desc">Patient appointment booking portal, test package selector, and Google Maps Local Pack dominance for a Kannur specialty clinic.</p>
+            <div class="portfolio-meta-tags" style="margin-bottom: 18px;">
+              <span class="portfolio-tag">Patient Booking</span>
+              <span class="portfolio-tag">Medical SEO</span>
+              <span class="portfolio-tag">Kannur Hub</span>
+            </div>
+            <a href="#" class="btn btn-outline btn-sm view-case-study-btn" 
+               data-title="North Malabar Health & Diagnostics" 
+               data-category-name="Web Development & Local SEO"
+               data-challenge="Patients struggle with cumbersome phone queues and lack clear transparent diagnostic test pricing online."
+               data-solution="Created an instant online test appointment selector with clear test prep guides and top-ranking Local SEO for medical queries in Kannur."
+               data-deliverables="Patient Booking Web App | Test Package Price Calculator | Google Maps Healthcare SEO | SSL Security & HIPAA-aligned privacy">
+              Inspect Scope Breakdown →
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="portfolio-card" data-category="media">
+          <div class="portfolio-image" style="background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);">
+            <span class="badge badge-concept portfolio-concept-pill">Concept Project</span>
+            <svg width="74" height="74" viewBox="0 0 24 24" fill="none" stroke="#EA580C" stroke-width="1.5"><path d="m22 8-6 4 6 4V8Z"></path><rect x="2" y="6" width="14" height="12" rx="2" ry="2"></rect></svg>
+          </div>
+          <div class="portfolio-body">
+            <div class="portfolio-category">Media Production &amp; Video</div>
+            <h3 class="portfolio-title">Theyyam Cultural Tours &amp; Stays</h3>
+            <p class="portfolio-desc">High-aesthetic documentary reel production, cultural storytelling, and booking platform for boutique heritage homestays across Kannur.</p>
+            <div class="portfolio-meta-tags" style="margin-bottom: 18px;">
+              <span class="portfolio-tag">4K Reels</span>
+              <span class="portfolio-tag">Cultural Video</span>
+              <span class="portfolio-tag">Direct Bookings</span>
+            </div>
+            <a href="#" class="btn btn-outline btn-sm view-case-study-btn" 
+               data-title="Theyyam Cultural Tours & Stays" 
+               data-category-name="Media & Video Production"
+               data-challenge="Boutique experiential stays in North Malabar lose bookings to high-commission aggregator platforms."
+               data-solution="Shot cinematic 4K video reels capturing Theyyam rituals and coastal homestay tranquility, paired with a direct booking engine."
+               data-deliverables="6 High-Retention 4K Social Reels | Documentary Brand Film (90s) | Direct Booking Web Funnel | High-Res Photography Library">
+              Inspect Scope Breakdown →
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 6 -->
+        <div class="portfolio-card" data-category="branding">
+          <div class="portfolio-image" style="background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);">
+            <span class="badge badge-concept portfolio-concept-pill">Concept Project</span>
+            <svg width="74" height="74" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><path d="m4.93 4.93 4.24 4.24"></path><path d="m14.83 9.17 4.24-4.24"></path></svg>
+          </div>
+          <div class="portfolio-body">
+            <div class="portfolio-category">Branding &amp; Packaging</div>
+            <h3 class="portfolio-title">Thalassery Bakehouse Co.</h3>
+            <p class="portfolio-desc">Heritage bakery rebranding, premium festive gift tins, and festive e-commerce order system honoring Thalassery's culinary tradition.</p>
+            <div class="portfolio-meta-tags" style="margin-bottom: 18px;">
+              <span class="portfolio-tag">Bakery Branding</span>
+              <span class="portfolio-tag">Tin Packaging</span>
+              <span class="portfolio-tag">Thalassery Heritage</span>
+            </div>
+            <a href="#" class="btn btn-outline btn-sm view-case-study-btn" 
+               data-title="Thalassery Bakehouse Co." 
+               data-category-name="Branding & Packaging"
+               data-challenge="Historic bakeries in Thalassery need to preserve their 50-year legacy while appealing to younger consumers and diaspora gift buyers."
+               data-solution="Re-engineered the legacy identity into an elevated heritage mark and designed collectible festive gift packaging."
+               data-deliverables="Heritage Brand Mark Suite | Custom Embossed Tin Box Packaging | Festive Gifting Order Page | Complete Vector Assets">
+              Inspect Scope Breakdown →
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CASE STUDY MODAL -->
+  <div class="project-modal-backdrop" id="projectModal">
+    <div class="project-modal-container">
+      <button class="modal-close-btn" id="closeProjectModal" aria-label="Close modal">✕</button>
+      <div id="projectModalBody">
+        <!-- Content dynamically injected via portfolio.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <section class="section section-bg-alt">
+    <div class="container">
+      <div class="cta-banner">
+        <div class="cta-banner-content">
+          <div class="eyebrow eyebrow-dark">Start Your Project</div>
+          <h2>Ready For Transparent, Predictable Results?</h2>
+          <p>Get a fixed-price proposal tailored specifically for your North Malabar business.</p>
+          <div class="btn-group" style="justify-content: center;">
+            <a href="contact.html" class="btn btn-primary btn-lg">Request Your Free Quote</a>
+            <a href="services.html" class="btn btn-white-outline btn-lg">View Service Packages</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top-grid">
+        <div class="footer-brand">
+          <a href="index.html" class="brand-logo">
+            <img src="assets/images/logo-white.svg" alt="AKZQ.Creation Logo" width="170" height="38">
+          </a>
+          <p>A digital marketing and creative agency based in Kannur, Kerala. Transparent fixed pricing, zero black boxes.</p>
+        </div>
+        <div>
+          <h4 class="footer-title">Services</h4>
+          <div class="footer-links">
+            <a href="branding-identity.html">Branding &amp; Identity</a>
+            <a href="web-design-development.html">Web Design &amp; Development</a>
+            <a href="digital-marketing-seo.html">Digital Marketing &amp; SEO</a>
+            <a href="media-content-production.html">Media &amp; Content Production</a>
+            <a href="local-seo.html">Local SEO</a>
+          </div>
+        </div>
+        <div>
+          <h4 class="footer-title">Pages</h4>
+          <div class="footer-links">
+            <a href="kannur.html">Kannur Agency Hub</a>
+            <a href="thalassery.html">Thalassery Agency Hub</a>
+            <a href="about.html">About Us</a>
+            <a href="portfolio.html">Portfolio</a>
+            <a href="faq.html">FAQ</a>
+            <a href="contact.html">Contact</a>
+          </div>
+        </div>
+        <div>
+          <h4 class="footer-title">Studio</h4>
+          <div class="footer-nap-info">
+            <p><strong>AKZQ.Creation</strong></p>
+            <p><a href="https://maps.app.goo.gl/VG7GxtuddrXFstY56" target="_blank" rel="noopener noreferrer" style="color: var(--dark-text-muted);">Near Caltex Junction, SN Park Road<br>Kannur, Kerala 670002</a></p>
+            <p>Phone: <a href="tel:+917510109730" style="color: #FFFFFF;">+91 7510109730</a></p>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div>&copy; 2026 AKZQ.Creation. All rights reserved.</div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/portfolio.js"></script>
+</body>
+</html>
