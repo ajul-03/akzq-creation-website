@@ -1,6 +1,20 @@
-node_modules
+node_modules/
+.next/
+dist/
+build/
+.vercel/
+
+# Environment files
 .env
-.env.local
-dist
-build
-.vercel
+.env*.local
+.env.production
+.env.development
+!.env.example
+
+# Next.js types
+next-env.d.ts
+
+# OS & Logs
+Thumbs.db
+.DS_Store
+*.log
