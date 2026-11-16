@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     url: "https://akzqcreation.com",
       images: [
       {
-        url: "https://akzqcreation.com/assets/images/logo.svg",
+        url: "https://akzqcreation.com/assets/images/og-share.png",
         width: 1200,
         height: 630,
         alt: "AKZQ.Creation — Digital Marketing & Web Agency in Kannur & Thalassery",
@@ -38,7 +38,7 @@ export default function HomePage() {
       "streetAddress": "Near Caltex Junction, SN Park Road",
       "addressLocality": "Kannur",
       "addressRegion": "Kerala",
-      "postalCode": "670002",
+      "postalCode": "670675",
       "addressCountry": "IN"
     },
     "geo": {

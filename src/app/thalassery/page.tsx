@@ -12,12 +12,18 @@ export const metadata: Metadata = {
     url: "https://akzqcreation.com/thalassery",
       images: [
       {
-        url: "https://akzqcreation.com/assets/images/logo.svg",
+        url: "https://akzqcreation.com/assets/images/og-share.png",
         width: 1200,
         height: 630,
-        alt: "AKZQ.Creation — Digital Marketing & Web Agency in Kannur & Thalassery",
+        alt: "AKZQ.Creation — Digital Marketing & Web Agency in Thalassery",
       },
     ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Web Design & Digital Marketing Agency in Thalassery, Kerala — AKZQ.Creation",
+    description: "AKZQ.Creation is a modern web design and digital marketing agency serving Thalassery businesses, including the Logan Street commercial cluster, Court Road, and retail brands.",
+    images: ["https://akzqcreation.com/assets/images/og-share.png"],
   },
 };
 
@@ -38,7 +44,7 @@ export default function ThalasseryPage() {
       "streetAddress": "Logan Street / Court Road Commercial Area",
       "addressLocality": "Thalassery",
       "addressRegion": "Kerala",
-      "postalCode": "670101",
+      "postalCode": "670675",
       "addressCountry": "IN"
     },
     "telephone": "+917510109730",

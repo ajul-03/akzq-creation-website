@@ -1,7 +1,27 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
-export function Footer() {
+export interface FooterProps {
+  variant?: "default" | "kannur" | "thalassery";
+}
+
+export function Footer({ variant = "default" }: FooterProps) {
+  const pathname = usePathname();
+  const effectiveVariant =
+    variant !== "default"
+      ? variant
+      : pathname === "/kannur"
+      ? "kannur"
+      : pathname === "/thalassery"
+      ? "thalassery"
+      : "default";
+
+  const showKannur = effectiveVariant !== "thalassery";
+  const showThalassery = effectiveVariant !== "kannur";
+
   return (
     <footer className="site-footer">
       <div className="container footer-grid">
@@ -16,9 +36,11 @@ export function Footer() {
             />
           </Link>
           <p className="footer-desc">
-            North Malabar’s transparent creative &amp; digital growth agency.
-            Providing fixed-price quotes, honest timelines, and measurable
-            outcomes for businesses in Kannur, Thalassery, and beyond.
+            {effectiveVariant === "thalassery"
+              ? "A digital marketing and creative agency serving Thalassery businesses, Logan Street retailers, and North Malabar with transparent fixed pricing."
+              : effectiveVariant === "kannur"
+              ? "North Malabar’s transparent creative & digital growth agency. Providing fixed-price quotes, honest timelines, and measurable outcomes for businesses in Kannur and beyond."
+              : "North Malabar’s transparent creative & digital growth agency. Providing fixed-price quotes, honest timelines, and measurable outcomes for businesses in Kannur, Thalassery, and beyond."}
           </p>
           <div className="footer-badges">
             <span className="badge badge-outline">Zero Hidden Fees</span>
@@ -58,12 +80,16 @@ export function Footer() {
         <div className="footer-col">
           <h4 className="footer-heading">Locations &amp; Info</h4>
           <ul className="footer-links">
-            <li>
-              <Link href="/kannur">Kannur Studio (Caltex)</Link>
-            </li>
-            <li>
-              <Link href="/thalassery">Thalassery Hub (Logan St)</Link>
-            </li>
+            {showKannur && (
+              <li>
+                <Link href="/kannur">Kannur Studio (Caltex)</Link>
+              </li>
+            )}
+            {showThalassery && (
+              <li>
+                <Link href="/thalassery">Thalassery Hub (Logan St)</Link>
+              </li>
+            )}
             <li>
               <Link href="/about">About Agency &amp; Manifesto</Link>
             </li>
@@ -81,10 +107,12 @@ export function Footer() {
 
         {/* Contact & NAP Column */}
         <div className="footer-col">
-          <h4 className="footer-heading">Get in Touch</h4>
+          <h4 className="footer-heading">
+            {effectiveVariant === "thalassery" ? "Thalassery Consultations" : "Get in Touch"}
+          </h4>
           <div className="footer-contact-item">
             <strong>Phone:</strong>
-            <a href="tel:+917510109730">+91 7510109730</a>
+            <a href="tel:+917510109730">+91 75101 09730</a>
           </div>
           <div className="footer-contact-item">
             <strong>WhatsApp:</strong>
@@ -93,7 +121,7 @@ export function Footer() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              +91 7510109730 (Fast Reply)
+              +91 75101 09730 (Fast Reply)
             </a>
           </div>
           <div className="footer-contact-item">
@@ -103,7 +131,9 @@ export function Footer() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              SN Park Road, Near Caltex Junction, Kannur, Kerala 670002
+              {effectiveVariant === "thalassery"
+                ? "Logan Street & Court Road Commercial Area, Thalassery, Kerala 670675"
+                : "SN Park Road, Near Caltex Junction, Kannur, Kerala 670675"}
             </a>
           </div>
           <div className="footer-contact-item">
@@ -115,8 +145,12 @@ export function Footer() {
 
       <div className="container footer-bottom">
         <p className="copyright">
-          &copy; {new Date().getFullYear()} AKZQ.Creation. All rights reserved.
-          Transparent digital growth for North Malabar.
+          &copy; {new Date().getFullYear()} AKZQ.Creation
+          {effectiveVariant === "kannur"
+            ? " — Kannur Hub. All rights reserved."
+            : effectiveVariant === "thalassery"
+            ? " — Thalassery Hub. All rights reserved."
+            : ". All rights reserved. Transparent digital growth for North Malabar."}
         </p>
         <div className="footer-bottom-links">
           <Link href="/faq">Pricing Transparency</Link>

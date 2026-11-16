@@ -170,125 +170,135 @@
     {
       "page": "/",
       "origLength": 9777,
-      "nextLength": 10056,
-      "diffChars": 279,
-      "diffPercent": "2.85%",
+      "nextLength": 10059,
+      "diffChars": 282,
+      "diffPercent": "2.88%",
       "materialDifference": false
     },
     {
       "page": "/about",
       "origLength": 4212,
-      "nextLength": 4785,
-      "diffChars": 573,
-      "diffPercent": "13.60%",
+      "nextLength": 4788,
+      "diffChars": 576,
+      "diffPercent": "13.68%",
       "materialDifference": true
     },
     {
       "page": "/services",
       "origLength": 4493,
-      "nextLength": 4985,
-      "diffChars": 492,
-      "diffPercent": "10.95%",
+      "nextLength": 4988,
+      "diffChars": 495,
+      "diffPercent": "11.02%",
       "materialDifference": true
     },
     {
       "page": "/branding-identity",
       "origLength": 4713,
-      "nextLength": 5315,
-      "diffChars": 602,
-      "diffPercent": "12.77%",
+      "nextLength": 5318,
+      "diffChars": 605,
+      "diffPercent": "12.84%",
       "materialDifference": true
     },
     {
       "page": "/web-design-development",
       "origLength": 4674,
-      "nextLength": 5245,
-      "diffChars": 571,
-      "diffPercent": "12.22%",
+      "nextLength": 5248,
+      "diffChars": 574,
+      "diffPercent": "12.28%",
       "materialDifference": true
     },
     {
       "page": "/digital-marketing-seo",
       "origLength": 4104,
-      "nextLength": 4689,
-      "diffChars": 585,
-      "diffPercent": "14.25%",
+      "nextLength": 4692,
+      "diffChars": 588,
+      "diffPercent": "14.33%",
       "materialDifference": true
     },
     {
       "page": "/media-content-production",
       "origLength": 4031,
-      "nextLength": 4656,
-      "diffChars": 625,
-      "diffPercent": "15.50%",
+      "nextLength": 4659,
+      "diffChars": 628,
+      "diffPercent": "15.58%",
       "materialDifference": true
     },
     {
       "page": "/local-seo",
       "origLength": 4119,
-      "nextLength": 4718,
-      "diffChars": 599,
-      "diffPercent": "14.54%",
+      "nextLength": 4721,
+      "diffChars": 602,
+      "diffPercent": "14.62%",
       "materialDifference": true
     },
     {
       "page": "/kannur",
       "origLength": 4456,
-      "nextLength": 5127,
-      "diffChars": 671,
-      "diffPercent": "15.06%",
+      "nextLength": 4971,
+      "diffChars": 515,
+      "diffPercent": "11.56%",
       "materialDifference": true
     },
     {
       "page": "/thalassery",
       "origLength": 4535,
-      "nextLength": 5141,
-      "diffChars": 606,
-      "diffPercent": "13.36%",
+      "nextLength": 4986,
+      "diffChars": 451,
+      "diffPercent": "9.94%",
       "materialDifference": true
     },
     {
       "page": "/portfolio",
       "origLength": 3498,
-      "nextLength": 3273,
-      "diffChars": 225,
-      "diffPercent": "6.43%",
+      "nextLength": 3276,
+      "diffChars": 222,
+      "diffPercent": "6.35%",
       "materialDifference": true
     },
     {
       "page": "/blog",
       "origLength": 3664,
-      "nextLength": 4293,
-      "diffChars": 629,
-      "diffPercent": "17.17%",
+      "nextLength": 4296,
+      "diffChars": 632,
+      "diffPercent": "17.25%",
       "materialDifference": true
     },
     {
       "page": "/blog-cost-of-seo-kerala",
       "origLength": 4220,
-      "nextLength": 4851,
-      "diffChars": 631,
-      "diffPercent": "14.95%",
+      "nextLength": 4854,
+      "diffChars": 634,
+      "diffPercent": "15.02%",
       "materialDifference": true
     },
     {
       "page": "/faq",
       "origLength": 4515,
-      "nextLength": 4223,
-      "diffChars": 292,
-      "diffPercent": "6.47%",
+      "nextLength": 4226,
+      "diffChars": 289,
+      "diffPercent": "6.40%",
       "materialDifference": true
     },
     {
       "page": "/contact",
       "origLength": 3046,
-      "nextLength": 2973,
-      "diffChars": 73,
-      "diffPercent": "2.40%",
+      "nextLength": 2978,
+      "diffChars": 68,
+      "diffPercent": "2.23%",
       "materialDifference": false
     }
   ],
   "internalLinksReport": [
+    {
+      "target": "/_next/static/media/07c7676b89ed2778-s.p.2bn3s6zvc0dyp.woff2",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/_next/static/media/82450a180bcad83c-s.p.0p-wng2nn8o-p.woff2",
+      "statusCode": 200,
+      "valid": true
+    },
     {
       "target": "/assets/images/logo.svg",
       "statusCode": 200,
@@ -300,12 +310,12 @@
       "valid": true
     },
     {
-      "target": "/_next/static/css/914fcf11d48b4bf1.css",
+      "target": "/_next/static/chunks/12og6jwq3dslh.css",
       "statusCode": 200,
       "valid": true
     },
     {
-      "target": "/_next/static/chunks/webpack-dc3e7c52c63480cf.js",
+      "target": "/_next/static/chunks/3v_59l1qr_8dp.js",
       "statusCode": 200,
       "valid": true
     },

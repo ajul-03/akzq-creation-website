@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     siteName: "AKZQ.Creation",
     images: [
       {
-        url: "https://akzqcreation.com/assets/images/logo.svg",
+        url: "https://akzqcreation.com/assets/images/og-share.png",
         width: 1200,
         height: 630,
         alt: "AKZQ.Creation — Digital Marketing & Web Agency in Kannur & Thalassery",
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "AKZQ.Creation — Web Design & Digital Marketing Agency",
     description: "Transparent, fixed-price creative & digital agency serving Kannur, Thalassery, and North Malabar.",
-    images: ["https://akzqcreation.com/assets/images/logo.svg"],
+    images: ["https://akzqcreation.com/assets/images/og-share.png"],
   },
 };
 

@@ -106,7 +106,7 @@ export function FAQAccordion({ items }: FAQAccordionProps) {
           >
             <p>
               No matching answers found. Please contact us directly at{" "}
-              <a href="tel:+917510109730">+91 7510109730</a> or ask on WhatsApp.
+              <a href="tel:+917510109730">+91 75101 09730</a> or ask on WhatsApp.
             </p>
           </div>
         )}

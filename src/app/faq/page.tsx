@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     url: "https://akzqcreation.com/faq",
       images: [
       {
-        url: "https://akzqcreation.com/assets/images/logo.svg",
+        url: "https://akzqcreation.com/assets/images/og-share.png",
         width: 1200,
         height: 630,
         alt: "AKZQ.Creation — Digital Marketing & Web Agency in Kannur & Thalassery",

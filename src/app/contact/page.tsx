@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     url: "https://akzqcreation.com/contact",
       images: [
       {
-        url: "https://akzqcreation.com/assets/images/logo.svg",
+        url: "https://akzqcreation.com/assets/images/og-share.png",
         width: 1200,
         height: 630,
         alt: "AKZQ.Creation — Digital Marketing & Web Agency in Kannur & Thalassery",
@@ -59,11 +59,11 @@ export default function ContactPage() {
                 </div>
                 <div className="nap-item">
                   <span className="nap-label">Direct Phone:</span>
-                  <span className="nap-val"><a href="tel:+917510109730">+91 7510109730</a></span>
+                  <span className="nap-val"><a href="tel:+917510109730">+91 75101 09730</a></span>
                 </div>
                 <div className="nap-item">
                   <span className="nap-label">Fast WhatsApp:</span>
-                  <span className="nap-val"><a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer">+91 7510109730</a></span>
+                  <span className="nap-val"><a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer">+91 75101 09730</a></span>
                 </div>
                 <div className="nap-item">
                   <span className="nap-label">Google Maps:</span>

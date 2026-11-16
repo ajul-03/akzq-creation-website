@@ -99,7 +99,7 @@ export function ContactForm() {
               type="tel"
               id="clientPhone"
               name="phone"
-              placeholder="e.g. +91 98765 43210"
+              placeholder="e.g. +91 75101 09730"
               className="form-control"
             />
           </div>

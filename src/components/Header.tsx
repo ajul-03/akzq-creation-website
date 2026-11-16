@@ -4,7 +4,11 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export function Header() {
+export interface HeaderProps {
+  variant?: "default" | "kannur" | "thalassery";
+}
+
+export function Header({ variant = "default" }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
@@ -37,6 +41,11 @@ export function Header() {
     if (path !== "/" && pathname === path) return true;
     return false;
   };
+
+  // Determine which location links to show based on variant or current route
+  const effectiveVariant = variant !== "default" ? variant : pathname === "/kannur" ? "kannur" : pathname === "/thalassery" ? "thalassery" : "default";
+  const showKannur = effectiveVariant !== "thalassery";
+  const showThalassery = effectiveVariant !== "kannur";
 
   return (
     <>
@@ -134,7 +143,11 @@ export function Header() {
                 <Link href="/local-seo" className="dropdown-link">
                   <span className="dropdown-link-title">Local SEO</span>
                   <span className="dropdown-link-desc">
-                    Dominate Google Maps in Kannur &amp; Thalassery
+                    {effectiveVariant === "kannur"
+                      ? "Dominate Google Maps in Kannur"
+                      : effectiveVariant === "thalassery"
+                      ? "Dominate Google Maps in Thalassery"
+                      : "Dominate Google Maps in Kannur & Thalassery"}
                   </span>
                 </Link>
               </div>
@@ -155,18 +168,22 @@ export function Header() {
                 </svg>
               </span>
               <div className="nav-dropdown-menu">
-                <Link href="/kannur" className="dropdown-link">
-                  <span className="dropdown-link-title">Kannur Studio</span>
-                  <span className="dropdown-link-desc">
-                    Serving South Bazaar, Caltex, Fort Road &amp; surrounds
-                  </span>
-                </Link>
-                <Link href="/thalassery" className="dropdown-link">
-                  <span className="dropdown-link-title">Thalassery Hub</span>
-                  <span className="dropdown-link-desc">
-                    Serving Logan Street retail, Court Road &amp; Malabar trade
-                  </span>
-                </Link>
+                {showKannur && (
+                  <Link href="/kannur" className="dropdown-link">
+                    <span className="dropdown-link-title">Kannur Studio</span>
+                    <span className="dropdown-link-desc">
+                      Serving South Bazaar, Caltex, Fort Road &amp; surrounds
+                    </span>
+                  </Link>
+                )}
+                {showThalassery && (
+                  <Link href="/thalassery" className="dropdown-link">
+                    <span className="dropdown-link-title">Thalassery Hub</span>
+                    <span className="dropdown-link-desc">
+                      Serving Logan Street retail, Court Road &amp; Malabar trade
+                    </span>
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -262,12 +279,16 @@ export function Header() {
               — Local SEO (Google Maps)
             </Link>
           </div>
-          <Link href="/kannur" className="mobile-link">
-            Kannur Studio
-          </Link>
-          <Link href="/thalassery" className="mobile-link">
-            Thalassery Hub
-          </Link>
+          {showKannur && (
+            <Link href="/kannur" className="mobile-link">
+              Kannur Studio
+            </Link>
+          )}
+          {showThalassery && (
+            <Link href="/thalassery" className="mobile-link">
+              Thalassery Hub
+            </Link>
+          )}
           <Link href="/portfolio" className="mobile-link">
             Portfolio
           </Link>
