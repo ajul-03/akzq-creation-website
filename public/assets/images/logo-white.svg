@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" fill="none" class="brand-logo-svg">
+  <g class="logo-mark">
+    <!-- Left orange angled bar -->
+    <rect x="22" y="2" width="6.5" height="26" rx="2" transform="rotate(-18 22 2)" fill="#FF6A2B" />
+    <!-- Right orange angled bar -->
+    <rect x="36" y="0" width="6.5" height="26" rx="2" transform="rotate(18 36 0)" fill="#FF6A2B" />
+  </g>
+  <!-- AKZQ Main Text in White -->
+  <text x="6" y="54" font-family="'Poppins', sans-serif" font-weight="800" font-size="34" letter-spacing="-0.5px" fill="#FFFFFF">AKZQ</text>
+  <!-- Dot and Creation in Light Gray -->
+  <text x="110" y="54" font-family="'Poppins', sans-serif" font-weight="600" font-size="28" letter-spacing="-0.2px" fill="#A0A0AB">.Creation</text>
+</svg>

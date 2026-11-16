@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 540" fill="none" class="hero-dashboard-svg">
+  <defs>
+    <filter id="cardShadow" x="-10%" y="-10%" width="125%" height="130%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#15151A" flood-opacity="0.07" />
+    </filter>
+    <filter id="floatShadow" x="-20%" y="-20%" width="140%" height="150%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="10" stdDeviation="15" flood-color="#FF6A2B" flood-opacity="0.18" />
+    </filter>
+    <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF6A2B" stop-opacity="0.32" />
+      <stop offset="100%" stop-color="#FF6A2B" stop-opacity="0.0" />
+    </linearGradient>
+    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF6A2B" />
+      <stop offset="100%" stop-color="#FF905E" />
+    </linearGradient>
+    <linearGradient id="accentGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF0EA" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Decorative Geometric Aura -->
+  <circle cx="560" cy="110" r="130" fill="#FFF2EB" opacity="0.8" />
+  <circle cx="80" cy="420" r="90" fill="#F3F4F8" opacity="0.9" />
+  <rect x="520" y="380" width="120" height="120" rx="28" fill="#FFF5F0" transform="rotate(25 520 380)" opacity="0.6" />
+
+  <!-- Main Dashboard Container -->
+  <g filter="url(#cardShadow)">
+    <rect x="40" y="35" width="560" height="420" rx="20" fill="#FFFFFF" stroke="#E4E4E9" stroke-width="1.5" />
+    
+    <!-- Top Window Bar -->
+    <rect x="40" y="35" width="560" height="54" rx="20" fill="#FAFAFC" />
+    <path d="M40 89 H600" stroke="#E4E4E9" stroke-width="1" />
+    <circle cx="68" cy="62" r="5" fill="#E4E4E9" />
+    <circle cx="84" cy="62" r="5" fill="#E4E4E9" />
+    <circle cx="100" cy="62" r="5" fill="#E4E4E9" />
+    
+    <!-- Agency Status Pill -->
+    <rect x="130" y="50" width="220" height="24" rx="12" fill="#FFFFFF" stroke="#E4E4E9" />
+    <circle cx="144" cy="62" r="3.5" fill="#22C55E" />
+    <text x="156" y="66" font-family="'Poppins', sans-serif" font-size="11" font-weight="500" fill="#6B6B76">akzq.creation/growth-dashboard</text>
+
+    <!-- Top Action Tag -->
+    <rect x="475" y="49" width="105" height="26" rx="6" fill="#FFF0EA" />
+    <text x="487" y="66" font-family="'Poppins', sans-serif" font-size="11" font-weight="600" fill="#FF6A2B">Fixed Pricing ✓</text>
+  </g>
+
+  <!-- Left Stats Card 1 -->
+  <g transform="translate(68, 110)">
+    <rect width="150" height="96" rx="12" fill="#F8F9FA" stroke="#EDEDF2" stroke-width="1" />
+    <text x="14" y="28" font-family="'Poppins', sans-serif" font-size="11" font-weight="500" fill="#6B6B76">Local Search Reach</text>
+    <text x="14" y="60" font-family="'Poppins', sans-serif" font-size="24" font-weight="700" fill="#15151A">+184%</text>
+    <path d="M14 74 L40 74" stroke="#22C55E" stroke-width="2" stroke-linecap="round" />
+    <text x="46" y="78" font-family="'Poppins', sans-serif" font-size="10" font-weight="600" fill="#22C55E">North Malabar</text>
+  </g>
+
+  <!-- Middle Stats Card 2 -->
+  <g transform="translate(232, 110)">
+    <rect width="165" height="96" rx="12" fill="#F8F9FA" stroke="#EDEDF2" stroke-width="1" />
+    <text x="14" y="28" font-family="'Poppins', sans-serif" font-size="11" font-weight="500" fill="#6B6B76">Conversion Efficiency</text>
+    <text x="14" y="60" font-family="'Poppins', sans-serif" font-size="24" font-weight="700" fill="#FF6A2B">3.8x</text>
+    <text x="14" y="78" font-family="'Poppins', sans-serif" font-size="10" font-weight="500" fill="#6B6B76">vs. generic templates</text>
+  </g>
+
+  <!-- Right Stats Card 3 -->
+  <g transform="translate(411, 110)">
+    <rect width="165" height="96" rx="12" fill="#F8F9FA" stroke="#EDEDF2" stroke-width="1" />
+    <text x="14" y="28" font-family="'Poppins', sans-serif" font-size="11" font-weight="500" fill="#6B6B76">Process Visibility</text>
+    <text x="14" y="60" font-family="'Poppins', sans-serif" font-size="24" font-weight="700" fill="#15151A">100%</text>
+    <text x="14" y="78" font-family="'Poppins', sans-serif" font-size="10" font-weight="600" fill="#FF6A2B">Zero Black Boxes</text>
+  </g>
+
+  <!-- Growth Line Chart Area -->
+  <g transform="translate(68, 226)">
+    <rect width="508" height="196" rx="12" fill="#FAFAFC" stroke="#EDEDF2" stroke-width="1" />
+    <text x="18" y="28" font-family="'Poppins', sans-serif" font-size="12" font-weight="600" fill="#15151A">Client Traffic & Inbound Leads (Kannur & Thalassery)</text>
+    
+    <!-- Grid lines -->
+    <line x1="18" y1="60" x2="490" y2="60" stroke="#EDEDF2" stroke-dasharray="3 3" />
+    <line x1="18" y1="100" x2="490" y2="100" stroke="#EDEDF2" stroke-dasharray="3 3" />
+    <line x1="18" y1="140" x2="490" y2="140" stroke="#EDEDF2" stroke-dasharray="3 3" />
+
+    <!-- Chart Fill Area -->
+    <path d="M 24 165 C 80 155, 130 135, 180 120 C 230 105, 280 115, 330 80 C 390 50, 440 45, 484 25 L 484 175 L 24 175 Z" fill="url(#chartGradient)" />
+
+    <!-- Chart Main Line -->
+    <path d="M 24 165 C 80 155, 130 135, 180 120 C 230 105, 280 115, 330 80 C 390 50, 440 45, 484 25" stroke="#FF6A2B" stroke-width="3.5" stroke-linecap="round" fill="none" />
+
+    <!-- Data Nodes -->
+    <circle cx="180" cy="120" r="5" fill="#FFFFFF" stroke="#FF6A2B" stroke-width="2.5" />
+    <circle cx="330" cy="80" r="5" fill="#FFFFFF" stroke="#FF6A2B" stroke-width="2.5" />
+    <circle cx="484" cy="25" r="7" fill="#FF6A2B" stroke="#FFFFFF" stroke-width="2" />
+    
+    <!-- Tooltip on peak node -->
+    <g transform="translate(395, -15)">
+      <rect width="98" height="28" rx="6" fill="#15151A" />
+      <text x="10" y="18" font-family="'Poppins', sans-serif" font-size="10" font-weight="600" fill="#FFFFFF">Goal Exceeded ↑</text>
+    </g>
+
+    <!-- X Axis Months -->
+    <text x="24" y="188" font-family="'Poppins', sans-serif" font-size="10" font-weight="500" fill="#A0A0AB">Month 1 (Audit)</text>
+    <text x="160" y="188" font-family="'Poppins', sans-serif" font-size="10" font-weight="500" fill="#A0A0AB">Month 2 (Build)</text>
+    <text x="310" y="188" font-family="'Poppins', sans-serif" font-size="10" font-weight="500" fill="#A0A0AB">Month 3 (Launch)</text>
+    <text x="430" y="188" font-family="'Poppins', sans-serif" font-size="10" font-weight="600" fill="#FF6A2B">Scale (Ongoing)</text>
+  </g>
+
+  <!-- Floating Badge 1: Fixed Price Locked -->
+  <g transform="translate(18, 290)" filter="url(#floatShadow)">
+    <rect width="180" height="74" rx="14" fill="#FFFFFF" stroke="#FFD8C7" stroke-width="1.5" />
+    <circle cx="28" cy="37" r="16" fill="#FFF0EA" />
+    <path d="M23 37 L27 41 L34 33" stroke="#FF6A2B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+    <text x="52" y="32" font-family="'Poppins', sans-serif" font-size="12" font-weight="700" fill="#15151A">Fixed Scope Quote</text>
+    <text x="52" y="48" font-family="'Poppins', sans-serif" font-size="10" font-weight="500" fill="#6B6B76">Zero unexpected fees</text>
+    <text x="52" y="60" font-family="'Poppins', sans-serif" font-size="9" font-weight="600" fill="#FF6A2B">100% Guaranteed</text>
+  </g>
+
+  <!-- Floating Badge 2: Local Reach (Kannur & Thalassery) -->
+  <g transform="translate(450, 395)" filter="url(#cardShadow)">
+    <rect width="200" height="80" rx="14" fill="#15151A" />
+    <circle cx="32" cy="40" r="16" fill="#2A2A35" />
+    <path d="M32 28 C27.5 28 24 31.5 24 36 C24 42 32 49 32 49 C32 49 40 42 40 36 C40 31.5 36.5 28 32 28 Z M32 38.5 C30.6 38.5 29.5 37.4 29.5 36 C29.5 34.6 30.6 33.5 32 33.5 C33.4 33.5 34.5 34.6 34.5 36 C34.5 37.4 33.4 38.5 32 38.5 Z" fill="#FF6A2B" />
+    <text x="58" y="34" font-family="'Poppins', sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">Direct Founder Access</text>
+    <text x="58" y="50" font-family="'Poppins', sans-serif" font-size="10" font-weight="400" fill="#A0A0AB">Meet in Kannur &amp; Thalassery</text>
+    <text x="58" y="65" font-family="'Poppins', sans-serif" font-size="10" font-weight="600" fill="#22C55E">Active on WhatsApp</text>
+  </g>
+</svg>
