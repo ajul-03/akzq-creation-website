@@ -1,0 +1,137 @@
+[
+  {
+    "route": "/",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/about",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/about",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/services",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/services",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/branding-identity",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/branding-identity",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/web-design-development",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/web-design-development",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/digital-marketing-seo",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/digital-marketing-seo",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/media-content-production",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/media-content-production",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/local-seo",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/local-seo",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/kannur",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/kannur",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/thalassery",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/thalassery",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/portfolio",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/portfolio",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/blog",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/blog",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/blog-cost-of-seo-kerala",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/blog-cost-of-seo-kerala",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/faq",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/faq",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  },
+  {
+    "route": "/contact",
+    "titleMatch": true,
+    "descMatch": true,
+    "titleDiff": "IDENTICAL",
+    "descDiff": "IDENTICAL",
+    "canonical": "https://akzqcreation.com/contact",
+    "ogImage": "https://akzqcreation.com/assets/images/logo.svg"
+  }
+]

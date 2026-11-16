@@ -1,0 +1,440 @@
+{
+  "metadataReport": [
+    {
+      "page": "/",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/about",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/about",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/services",
+      "titleMatch": false,
+      "descMatch": false,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/services",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/branding-identity",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/branding-identity",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/web-design-development",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/web-design-development",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/digital-marketing-seo",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/digital-marketing-seo",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/media-content-production",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/media-content-production",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/local-seo",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/local-seo",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/kannur",
+      "titleMatch": false,
+      "descMatch": false,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/kannur",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/thalassery",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/thalassery",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/portfolio",
+      "titleMatch": false,
+      "descMatch": false,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/portfolio",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/blog",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/blog",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/blog-cost-of-seo-kerala",
+      "titleMatch": true,
+      "descMatch": false,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/blog-cost-of-seo-kerala",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/faq",
+      "titleMatch": false,
+      "descMatch": false,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/faq",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    },
+    {
+      "page": "/contact",
+      "titleMatch": false,
+      "descMatch": true,
+      "origCanon": "NONE (Added in Next.js)",
+      "nextCanon": "https://akzqcreation.com/contact",
+      "ogTitle": true,
+      "ogDesc": true,
+      "ogUrl": true,
+      "ogImage": true
+    }
+  ],
+  "textParityReport": [
+    {
+      "page": "/",
+      "origLength": 9777,
+      "nextLength": 10056,
+      "diffChars": 279,
+      "diffPercent": "2.85%",
+      "materialDifference": false
+    },
+    {
+      "page": "/about",
+      "origLength": 4212,
+      "nextLength": 4785,
+      "diffChars": 573,
+      "diffPercent": "13.60%",
+      "materialDifference": true
+    },
+    {
+      "page": "/services",
+      "origLength": 4493,
+      "nextLength": 4985,
+      "diffChars": 492,
+      "diffPercent": "10.95%",
+      "materialDifference": true
+    },
+    {
+      "page": "/branding-identity",
+      "origLength": 4713,
+      "nextLength": 5315,
+      "diffChars": 602,
+      "diffPercent": "12.77%",
+      "materialDifference": true
+    },
+    {
+      "page": "/web-design-development",
+      "origLength": 4674,
+      "nextLength": 5245,
+      "diffChars": 571,
+      "diffPercent": "12.22%",
+      "materialDifference": true
+    },
+    {
+      "page": "/digital-marketing-seo",
+      "origLength": 4104,
+      "nextLength": 4689,
+      "diffChars": 585,
+      "diffPercent": "14.25%",
+      "materialDifference": true
+    },
+    {
+      "page": "/media-content-production",
+      "origLength": 4031,
+      "nextLength": 4656,
+      "diffChars": 625,
+      "diffPercent": "15.50%",
+      "materialDifference": true
+    },
+    {
+      "page": "/local-seo",
+      "origLength": 4119,
+      "nextLength": 4718,
+      "diffChars": 599,
+      "diffPercent": "14.54%",
+      "materialDifference": true
+    },
+    {
+      "page": "/kannur",
+      "origLength": 4456,
+      "nextLength": 5127,
+      "diffChars": 671,
+      "diffPercent": "15.06%",
+      "materialDifference": true
+    },
+    {
+      "page": "/thalassery",
+      "origLength": 4535,
+      "nextLength": 5141,
+      "diffChars": 606,
+      "diffPercent": "13.36%",
+      "materialDifference": true
+    },
+    {
+      "page": "/portfolio",
+      "origLength": 3498,
+      "nextLength": 3273,
+      "diffChars": 225,
+      "diffPercent": "6.43%",
+      "materialDifference": true
+    },
+    {
+      "page": "/blog",
+      "origLength": 3664,
+      "nextLength": 4293,
+      "diffChars": 629,
+      "diffPercent": "17.17%",
+      "materialDifference": true
+    },
+    {
+      "page": "/blog-cost-of-seo-kerala",
+      "origLength": 4220,
+      "nextLength": 4851,
+      "diffChars": 631,
+      "diffPercent": "14.95%",
+      "materialDifference": true
+    },
+    {
+      "page": "/faq",
+      "origLength": 4515,
+      "nextLength": 4223,
+      "diffChars": 292,
+      "diffPercent": "6.47%",
+      "materialDifference": true
+    },
+    {
+      "page": "/contact",
+      "origLength": 3046,
+      "nextLength": 2973,
+      "diffChars": 73,
+      "diffPercent": "2.40%",
+      "materialDifference": false
+    }
+  ],
+  "internalLinksReport": [
+    {
+      "target": "/assets/images/logo.svg",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/assets/images/logo-white.svg",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/_next/static/css/914fcf11d48b4bf1.css",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/_next/static/chunks/webpack-dc3e7c52c63480cf.js",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/assets/images/favicon.svg",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/about",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/services",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/branding-identity",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/web-design-development",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/digital-marketing-seo",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/media-content-production",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/local-seo",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/kannur",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/thalassery",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/portfolio",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/blog",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/faq",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/contact",
+      "statusCode": 200,
+      "valid": true
+    },
+    {
+      "target": "/blog-cost-of-seo-kerala",
+      "statusCode": 200,
+      "valid": true
+    }
+  ],
+  "jsonLdReport": [
+    {
+      "schema": "LocalBusiness (Home)",
+      "contextMatch": true,
+      "typeMatch": true,
+      "nameMatch": true,
+      "phoneMatch": true,
+      "geoMatch": true,
+      "addressMatch": true,
+      "deepEqual": true
+    },
+    {
+      "schema": "FAQPage (FAQ)",
+      "contextMatch": true,
+      "typeMatch": true,
+      "questionCountOrig": 8,
+      "questionCountNext": 8,
+      "deepEqual": true
+    }
+  ],
+  "sitemapReport": {
+    "statusCode": 200,
+    "totalUrls": 15,
+    "hasRealLastmod": true,
+    "sampleLastmod": "2026-08-10T00:00:00.000Z",
+    "urlList": [
+      "https://akzqcreation.com",
+      "https://akzqcreation.com/about",
+      "https://akzqcreation.com/services",
+      "https://akzqcreation.com/branding-identity",
+      "https://akzqcreation.com/web-design-development",
+      "https://akzqcreation.com/digital-marketing-seo",
+      "https://akzqcreation.com/media-content-production",
+      "https://akzqcreation.com/local-seo",
+      "https://akzqcreation.com/kannur",
+      "https://akzqcreation.com/thalassery",
+      "https://akzqcreation.com/portfolio",
+      "https://akzqcreation.com/blog",
+      "https://akzqcreation.com/blog-cost-of-seo-kerala",
+      "https://akzqcreation.com/faq",
+      "https://akzqcreation.com/contact"
+    ]
+  },
+  "robotsReport": {
+    "statusCode": 200,
+    "body": "User-Agent: *\nAllow: /\n\nSitemap: https://akzqcreation.com/sitemap.xml"
+  }
+}
