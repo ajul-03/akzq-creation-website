@@ -1,0 +1,74 @@
+[
+  {
+    "page": "home",
+    "formFactor": "mobile",
+    "performance": 100,
+    "lcp": "0.5 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "20 ms"
+  },
+  {
+    "page": "home",
+    "formFactor": "desktop",
+    "performance": 100,
+    "lcp": "0.3 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "20 ms"
+  },
+  {
+    "page": "services",
+    "formFactor": "mobile",
+    "performance": 100,
+    "lcp": "0.3 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "20 ms"
+  },
+  {
+    "page": "services",
+    "formFactor": "desktop",
+    "performance": 100,
+    "lcp": "0.3 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "20 ms"
+  },
+  {
+    "page": "contact",
+    "formFactor": "mobile",
+    "performance": 100,
+    "lcp": "0.3 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "20 ms"
+  },
+  {
+    "page": "contact",
+    "formFactor": "desktop",
+    "performance": 100,
+    "lcp": "0.2 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "20 ms"
+  },
+  {
+    "page": "blog",
+    "formFactor": "mobile",
+    "performance": 100,
+    "lcp": "0.2 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "50 ms"
+  },
+  {
+    "page": "blog",
+    "formFactor": "desktop",
+    "performance": 100,
+    "lcp": "0.3 s",
+    "tbt": "0 ms",
+    "cls": "0",
+    "inp": "20 ms"
+  }
+]
