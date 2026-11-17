@@ -23,7 +23,6 @@ export function Header({ variant = "default" }: HeaderProps) {
   }, []);
 
   useEffect(() => {
-    // Close mobile nav on route change
     setMobileOpen(false);
     document.body.style.overflow = "";
   }, [pathname]);
@@ -42,10 +41,14 @@ export function Header({ variant = "default" }: HeaderProps) {
     return false;
   };
 
-  // Determine which location links to show based on variant or current route
-  const effectiveVariant = variant !== "default" ? variant : pathname === "/kannur" ? "kannur" : pathname === "/thalassery" ? "thalassery" : "default";
-  const showKannur = effectiveVariant !== "thalassery";
-  const showThalassery = effectiveVariant !== "kannur";
+  const effectiveVariant =
+    variant !== "default"
+      ? variant
+      : pathname === "/kannur"
+      ? "kannur"
+      : pathname === "/thalassery"
+      ? "thalassery"
+      : "default";
 
   return (
     <>
@@ -153,39 +156,51 @@ export function Header({ variant = "default" }: HeaderProps) {
               </div>
             </div>
 
-            <div className="nav-item-dropdown">
-              <span className="nav-link">
-                Locations
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </span>
-              <div className="nav-dropdown-menu">
-                {showKannur && (
+            {effectiveVariant === "kannur" ? (
+              <Link
+                href="/kannur"
+                className={`nav-link ${isActive("/kannur") ? "active" : ""}`}
+              >
+                Kannur Hub
+              </Link>
+            ) : effectiveVariant === "thalassery" ? (
+              <Link
+                href="/thalassery"
+                className={`nav-link ${isActive("/thalassery") ? "active" : ""}`}
+              >
+                Thalassery Hub
+              </Link>
+            ) : (
+              <div className="nav-item-dropdown">
+                <span className="nav-link">
+                  Locations
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </span>
+                <div className="nav-dropdown-menu">
                   <Link href="/kannur" className="dropdown-link">
-                    <span className="dropdown-link-title">Kannur Studio</span>
+                    <span className="dropdown-link-title">Kannur Agency</span>
                     <span className="dropdown-link-desc">
-                      Serving South Bazaar, Caltex, Fort Road &amp; surrounds
+                      Serving South Bazaar, Fort Road &amp; business hubs
                     </span>
                   </Link>
-                )}
-                {showThalassery && (
                   <Link href="/thalassery" className="dropdown-link">
-                    <span className="dropdown-link-title">Thalassery Hub</span>
+                    <span className="dropdown-link-title">Thalassery Agency</span>
                     <span className="dropdown-link-desc">
-                      Serving Logan Street retail, Court Road &amp; Malabar trade
+                      Serving Logan Street, Court Road &amp; retail clusters
                     </span>
                   </Link>
-                )}
+                </div>
               </div>
-            </div>
+            )}
 
             <Link
               href="/portfolio"
@@ -208,13 +223,25 @@ export function Header({ variant = "default" }: HeaderProps) {
           </nav>
 
           <div className="nav-actions">
-            <Link href="/contact" className="btn btn-primary nav-cta">
-              Get Fixed Quote
+            <div className="location-switcher">
+              {effectiveVariant === "kannur" ? (
+                <Link href="/kannur">Kannur HQ</Link>
+              ) : effectiveVariant === "thalassery" ? (
+                <Link href="/thalassery">Thalassery Desk</Link>
+              ) : (
+                <>
+                  <Link href="/kannur">Kannur</Link>
+                  <Link href="/thalassery">Thalassery</Link>
+                </>
+              )}
+            </div>
+            <Link href="/contact" className="btn btn-primary btn-sm">
+              Get a Free Quote
             </Link>
 
             <button
               className="mobile-toggle"
-              aria-label="Toggle navigation drawer"
+              aria-label="Toggle navigation menu"
               aria-expanded={mobileOpen}
               onClick={toggleMobileNav}
               type="button"
@@ -251,57 +278,54 @@ export function Header({ variant = "default" }: HeaderProps) {
       </header>
 
       {/* Mobile Navigation Drawer */}
-      <div className={`mobile-nav ${mobileOpen ? "open" : ""}`} aria-hidden={!mobileOpen}>
-        <div className="mobile-nav-inner">
-          <Link href="/" className="mobile-link">
-            Home
-          </Link>
-          <Link href="/about" className="mobile-link">
-            About Us
-          </Link>
-          <Link href="/services" className="mobile-link">
-            Services Overview
-          </Link>
-          <div className="mobile-sublinks">
-            <Link href="/branding-identity" className="mobile-sublink">
-              — Branding &amp; Identity
-            </Link>
-            <Link href="/web-design-development" className="mobile-sublink">
-              — Web Design &amp; Development
-            </Link>
-            <Link href="/digital-marketing-seo" className="mobile-sublink">
-              — Digital Marketing &amp; SEO
-            </Link>
-            <Link href="/media-content-production" className="mobile-sublink">
-              — Media &amp; Content Production
-            </Link>
-            <Link href="/local-seo" className="mobile-sublink">
-              — Local SEO (Google Maps)
-            </Link>
-          </div>
-          {showKannur && (
-            <Link href="/kannur" className="mobile-link">
-              Kannur Studio
-            </Link>
-          )}
-          {showThalassery && (
-            <Link href="/thalassery" className="mobile-link">
-              Thalassery Hub
-            </Link>
-          )}
-          <Link href="/portfolio" className="mobile-link">
-            Portfolio
-          </Link>
-          <Link href="/blog" className="mobile-link">
-            Blog &amp; Insights
-          </Link>
-          <Link href="/faq" className="mobile-link">
-            FAQ
-          </Link>
-          <Link href="/contact" className="mobile-link mobile-link-highlight">
-            Get Fixed Quote
-          </Link>
+      <div className={`mobile-nav ${mobileOpen ? "open" : ""}`} aria-label="Mobile Navigation">
+        <Link href="/" className="nav-link">
+          Home
+        </Link>
+        <Link href="/about" className="nav-link">
+          About Us
+        </Link>
+        <div style={{ fontWeight: 600, fontSize: "1rem", color: "var(--text-primary)", marginTop: "8px" }}>
+          Services
         </div>
+        <div className="mobile-submenu">
+          <Link href="/branding-identity">Branding &amp; Identity</Link>
+          <Link href="/web-design-development">Web Design &amp; Development</Link>
+          <Link href="/digital-marketing-seo">Digital Marketing &amp; SEO</Link>
+          <Link href="/media-content-production">Media &amp; Content Production</Link>
+          <Link href="/local-seo">Local SEO</Link>
+        </div>
+        {effectiveVariant === "kannur" ? (
+          <Link href="/kannur" className="nav-link" style={{ color: "var(--accent)", fontWeight: 600 }}>
+            Kannur Agency Hub
+          </Link>
+        ) : effectiveVariant === "thalassery" ? (
+          <Link href="/thalassery" className="nav-link" style={{ color: "var(--accent)", fontWeight: 600 }}>
+            Thalassery Agency Hub
+          </Link>
+        ) : (
+          <>
+            <div style={{ fontWeight: 600, fontSize: "1rem", color: "var(--text-primary)", marginTop: "8px" }}>
+              Locations
+            </div>
+            <div className="mobile-submenu">
+              <Link href="/kannur">Kannur Agency Hub</Link>
+              <Link href="/thalassery">Thalassery Agency Hub</Link>
+            </div>
+          </>
+        )}
+        <Link href="/portfolio" className="nav-link">
+          Portfolio
+        </Link>
+        <Link href="/blog" className="nav-link">
+          Blog
+        </Link>
+        <Link href="/faq" className="nav-link">
+          FAQ
+        </Link>
+        <Link href="/contact" className="btn btn-primary" style={{ marginTop: "16px" }}>
+          Get a Free Quote
+        </Link>
       </div>
     </>
   );
