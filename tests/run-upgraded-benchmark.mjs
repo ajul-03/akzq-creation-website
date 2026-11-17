@@ -91,6 +91,9 @@ async function main() {
 
   const RUNS = 5;
   const summaryResults = [];
+  const outDir = path.resolve('docs/nextjs-lighthouse');
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+  const outJsonPath = path.join(outDir, 'upgraded-benchmark.json');
 
   try {
     for (const page of pages) {
@@ -112,8 +115,6 @@ async function main() {
         };
 
         for (let r = 1; r <= RUNS; r++) {
-          process.stdout.write(`  [${r}/${RUNS}] `);
-
           // Run Baseline
           const sRes = await lighthouse(page.staticUrl, lhConfig);
           const sAudits = sRes.lhr.audits;
@@ -132,7 +133,7 @@ async function main() {
           const nCls = nAudits['cumulative-layout-shift']?.numericValue || 0;
           nextRuns.push({ perf: nPerf, lcp: nLcp, tbt: nTbt, cls: nCls });
 
-          console.log(`Static: ${sPerf} (${Math.round(sLcp)}ms) | Next: ${nPerf} (${Math.round(nLcp)}ms)`);
+          console.log(`  [${r}/${RUNS}] Baseline: ${sPerf} (${Math.round(sLcp)}ms) | Next.js: ${nPerf} (${Math.round(nLcp)}ms)`);
         }
 
         const staticScoreStats = calculateStats(staticRuns.map((r) => r.perf));
@@ -145,12 +146,11 @@ async function main() {
         const nextClsStats = calculateStats(nextRuns.map((r) => r.cls));
 
         // Evaluate whether improvement exceeds the spread
-        // Difference in medians:
         const lcpDelta = staticLcpStats.median - nextLcpStats.median;
         const maxSpread = Math.max(staticLcpStats.spread, nextLcpStats.spread);
         const lcpImprovementClaimable = lcpDelta > maxSpread;
 
-        summaryResults.push({
+        const row = {
           page: page.name,
           formFactor,
           runs: RUNS,
@@ -165,16 +165,16 @@ async function main() {
           nextTbtMedian: `${Math.round(nextTbtStats.median)} ms`,
           staticClsMedian: Number(staticClsStats.median.toFixed(3)),
           nextClsMedian: Number(nextClsStats.median.toFixed(3)),
-        });
+        };
+
+        summaryResults.push(row);
+        fs.writeFileSync(outJsonPath, JSON.stringify(summaryResults, null, 2));
       }
     }
 
     console.log('\n=== UPGRADED 5-RUN BENCHMARK SUMMARY TABLE ===');
     console.table(summaryResults);
-
-    const outDir = path.resolve('docs/nextjs-lighthouse');
-    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(path.join(outDir, 'upgraded-benchmark.json'), JSON.stringify(summaryResults, null, 2));
+    console.log('\nRaw benchmark JSON saved to:', outJsonPath);
   } finally {
     await chrome.kill();
     staticServer.close();

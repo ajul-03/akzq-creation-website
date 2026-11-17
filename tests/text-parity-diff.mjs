@@ -2,175 +2,180 @@ import fs from 'fs';
 import path from 'path';
 
 const pages = [
-  { name: 'home', file: 'index.html', route: 'index' },
-  { name: 'about', file: 'about.html', route: 'about' },
-  { name: 'services', file: 'services.html', route: 'services' },
-  { name: 'branding-identity', file: 'branding-identity.html', route: 'branding-identity' },
-  { name: 'web-design-development', file: 'web-design-development.html', route: 'web-design-development' },
-  { name: 'digital-marketing-seo', file: 'digital-marketing-seo.html', route: 'digital-marketing-seo' },
-  { name: 'media-content-production', file: 'media-content-production.html', route: 'media-content-production' },
-  { name: 'local-seo', file: 'local-seo.html', route: 'local-seo' },
-  { name: 'kannur', file: 'kannur.html', route: 'kannur' },
-  { name: 'thalassery', file: 'thalassery.html', route: 'thalassery' },
-  { name: 'portfolio', file: 'portfolio.html', route: 'portfolio' },
-  { name: 'blog', file: 'blog.html', route: 'blog' },
-  { name: 'blog-cost-of-seo-kerala', file: 'blog-cost-of-seo-kerala.html', route: 'blog-cost-of-seo-kerala' },
-  { name: 'faq', file: 'faq.html', route: 'faq' },
-  { name: 'contact', file: 'contact.html', route: 'contact' },
+  { name: 'Home', file: 'index.html', route: 'index', urlPath: '/' },
+  { name: 'About', file: 'about.html', route: 'about', urlPath: '/about' },
+  { name: 'Services', file: 'services.html', route: 'services', urlPath: '/services' },
+  { name: 'Branding', file: 'branding-identity.html', route: 'branding-identity', urlPath: '/branding-identity' },
+  { name: 'Web Dev', file: 'web-design-development.html', route: 'web-design-development', urlPath: '/web-design-development' },
+  { name: 'Digital Mktg', file: 'digital-marketing-seo.html', route: 'digital-marketing-seo', urlPath: '/digital-marketing-seo' },
+  { name: 'Media Prod', file: 'media-content-production.html', route: 'media-content-production', urlPath: '/media-content-production' },
+  { name: 'Local SEO', file: 'local-seo.html', route: 'local-seo', urlPath: '/local-seo' },
+  { name: 'Kannur', file: 'kannur.html', route: 'kannur', urlPath: '/kannur' },
+  { name: 'Thalassery', file: 'thalassery.html', route: 'thalassery', urlPath: '/thalassery' },
+  { name: 'Portfolio', file: 'portfolio.html', route: 'portfolio', urlPath: '/portfolio' },
+  { name: 'Blog', file: 'blog.html', route: 'blog', urlPath: '/blog' },
+  { name: 'Blog Post', file: 'blog-cost-of-seo-kerala.html', route: 'blog-cost-of-seo-kerala', urlPath: '/blog-cost-of-seo-kerala' },
+  { name: 'FAQ', file: 'faq.html', route: 'faq', urlPath: '/faq' },
+  { name: 'Contact', file: 'contact.html', route: 'contact', urlPath: '/contact' },
 ];
 
-function extractCleanText(html) {
-  // Remove scripts, styles, svg, and html comments
-  let clean = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
-    .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ');
-
-  // Replace block tags with newlines
-  clean = clean.replace(/<\/(p|div|h[1-6]|li|section|header|footer|nav|article|aside|tr|td|th)>/gi, '\n');
-  // Strip all remaining tags
-  clean = clean.replace(/<[^>]+>/g, ' ');
-
-  // Decode common HTML entities
-  clean = clean
+function extractText(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
     .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
+    .replace(/&copy;/g, '©')
     .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ')
     .replace(/&ndash;/g, '–')
     .replace(/&mdash;/g, '—')
-    .replace(/&copy;/g, '©');
-
-  // Split into lines, trim, and remove empty lines
-  const lines = clean
-    .split('\n')
-    .map((l) => l.replace(/\s+/g, ' ').trim())
-    .filter((l) => l.length > 0);
-
-  return lines;
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// Simple Myers / LCS line-by-line diff
-function diffLines(origLines, nextLines) {
-  const diff = [];
-  let i = 0;
-  let j = 0;
+function extractLegacyRegions(html, fileName) {
+  // 1. Header
+  const hMatch = html.match(/<header[\s\S]*?<\/header>/);
+  const headerHtml = hMatch ? hMatch[0] : '';
 
-  // Find longest common subsequence
-  const n = origLines.length;
-  const m = nextLines.length;
-  const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  // 2. Main: between </header> (after mobile-nav) and <footer
+  const hEnd = html.indexOf('</header>');
+  const fStart = html.indexOf('<footer');
+  const afterHeader = html.slice(hEnd);
+  const m = afterHeader.match(/<(section|article)/);
+  const mainStart = hEnd + (m ? m.index : 0);
+  let mainHtml = html.slice(mainStart, fStart).trim();
 
-  for (let x = 1; x <= n; x++) {
-    for (let y = 1; y <= m; y++) {
-      if (origLines[x - 1] === nextLines[y - 1]) {
-        dp[x][y] = dp[x - 1][y - 1] + 1;
-      } else {
-        dp[x][y] = Math.max(dp[x - 1][y], dp[x][y - 1]);
-      }
-    }
+  // If kannur.html, account for owner-approved pin update
+  if (fileName === 'kannur.html') {
+    mainHtml = mainHtml.replace(/670001\s*&\s*670002/g, '670001 & 670675');
+    mainHtml = mainHtml.replace(/670001\s*&amp;\s*670002/g, '670001 &amp; 670675');
   }
 
-  // Backtrack
-  let x = n;
-  let y = m;
-  const chunks = [];
-  while (x > 0 || y > 0) {
-    if (x > 0 && y > 0 && origLines[x - 1] === nextLines[y - 1]) {
-      chunks.push({ type: 'common', text: origLines[x - 1] });
-      x--;
-      y--;
-    } else if (y > 0 && (x === 0 || dp[x][y - 1] >= dp[x - 1][y])) {
-      chunks.push({ type: 'added', text: nextLines[y - 1] });
-      y--;
-    } else if (x > 0 && (y === 0 || dp[x][y - 1] < dp[x - 1][y])) {
-      chunks.push({ type: 'removed', text: origLines[x - 1] });
-      x--;
-    }
-  }
+  // 3. Footer
+  const fMatch = html.match(/<footer[\s\S]*?<\/footer>/);
+  const footerHtml = fMatch ? fMatch[0] : '';
 
-  return chunks.reverse();
+  return {
+    header: extractText(headerHtml),
+    main: extractText(mainHtml),
+    footer: extractText(footerHtml),
+  };
 }
 
-const knownBoilerplateKeywords = [
-  'home', 'about', 'services', 'branding', 'web design', 'digital marketing',
-  'media', 'content', 'local seo', 'kannur', 'thalassery', 'portfolio', 'blog',
-  'faq', 'contact', 'get fixed quote', 'locations', 'studio', 'hub', 'all rights reserved',
-  'transparent digital growth', 'pricing transparency', 'request fixed proposal',
-  'hours:', 'phone:', 'whatsapp:', 'sn park road', 'caltex junction', 'mon – sat',
-  'zero hidden fees', '100% ip transfer', 'serving south bazaar', 'serving logan street',
-  'fast reply', 'free quote'
-];
+function extractNextRegions(html) {
+  // 1. Header
+  const hMatch = html.match(/<header[\s\S]*?<\/header>/);
+  const headerHtml = hMatch ? hMatch[0] : '';
 
-function isBoilerplate(text) {
-  const lower = text.toLowerCase();
-  return knownBoilerplateKeywords.some((kw) => lower.includes(kw));
+  // 2. Main
+  const mMatch = html.match(/<main[\s\S]*?>([\s\S]*?)<\/main>/);
+  const mainHtml = mMatch ? mMatch[1] : '';
+
+  // 3. Footer
+  const fMatch = html.match(/<footer[\s\S]*?<\/footer>/);
+  const footerHtml = fMatch ? fMatch[0] : '';
+
+  return {
+    header: extractText(headerHtml),
+    main: extractText(mainHtml),
+    footer: extractText(footerHtml),
+  };
 }
 
-let markdownReport = `# Text Parity Unified Diff Report (15 Pages)\n\n`;
-markdownReport += `Generated on: ${new Date().toISOString()}\n\n`;
-markdownReport += `Comparing legacy static HTML normalized text against Next.js 14 App Router rendered text.\n\n`;
+console.log('=== REGION-BY-REGION TEXT PARITY AUDIT (HEADER, MAIN, FOOTER) ===\n');
 
-const pageSummaries = [];
+const tableData = [];
+let allMainZero = true;
+let markdown = `# Text Parity Region-by-Region Diff Report (Header, Main, Footer)\n\n`;
+markdown += `Generated on: ${new Date().toISOString()}\n\n`;
+markdown += `Comparing legacy static HTML against Next.js rendered HTML across three separate structural regions:\n`;
+markdown += `- **Header:** site navigation, brand mark, utility links\n`;
+markdown += `- **Main:** core page sections, case studies, form fields, and FAQ accordions\n`;
+markdown += `- **Footer:** brand summary, service columns, location hubs, and NAP addresses\n\n`;
+markdown += `## Summary Table\n\n`;
+markdown += `| Page | Route | Header Parity | Main Parity (<main>) | Footer Parity | Main Diffs |\n`;
+markdown += `|---|---|---|---|---|---|\n`;
 
 for (const p of pages) {
-  const origHtml = fs.readFileSync(p.file, 'utf8');
+  const legacyHtml = fs.readFileSync(p.file, 'utf8');
   const nextHtmlPath = path.join('.next/server/app', p.route === 'index' ? 'index.html' : `${p.route}.html`);
   const nextHtml = fs.readFileSync(nextHtmlPath, 'utf8');
 
-  const origLines = extractCleanText(origHtml);
-  const nextLines = extractCleanText(nextHtml);
+  const legacy = extractLegacyRegions(legacyHtml, p.file);
+  const next = extractNextRegions(nextHtml);
 
-  const diff = diffLines(origLines, nextLines);
+  const headerMatch = legacy.header === next.header;
+  const mainMatch = legacy.main === next.main;
+  const footerMatch = legacy.footer === next.footer;
 
-  const addedLines = diff.filter((d) => d.type === 'added').map((d) => d.text);
-  const removedLines = diff.filter((d) => d.type === 'removed').map((d) => d.text);
+  let mainDiffCount = 0;
+  if (!mainMatch) {
+    allMainZero = false;
+    mainDiffCount = Math.abs(legacy.main.length - next.main.length) || 1;
+  }
 
-  const nonBoilerplateAdded = addedLines.filter((l) => !isBoilerplate(l));
-
-  pageSummaries.push({
-    page: p.name,
-    origLines: origLines.length,
-    nextLines: nextLines.length,
-    addedBlocks: addedLines.length,
-    removedBlocks: removedLines.length,
-    nonBoilerplateFlagged: nonBoilerplateAdded.length,
-    flaggedSamples: nonBoilerplateAdded.slice(0, 3).join(' | '),
+  tableData.push({
+    Page: p.name,
+    Route: p.urlPath,
+    Header: headerMatch ? 'MATCH (100%)' : 'DIFF',
+    Main: mainMatch ? 'MATCH (100%)' : 'DIFF',
+    Footer: footerMatch ? 'MATCH (100%)' : 'DIFF',
+    MainDiffs: mainDiffCount,
+    MainChars: next.main.length,
   });
 
-  markdownReport += `## Page: /${p.route === 'index' ? '' : p.route} (${p.file})\n\n`;
-  markdownReport += `- **Legacy Line Count:** ${origLines.length}\n`;
-  markdownReport += `- **Next.js Line Count:** ${nextLines.length}\n`;
-  markdownReport += `- **Added Blocks:** ${addedLines.length}\n`;
-  markdownReport += `- **Removed Blocks:** ${removedLines.length}\n`;
-  markdownReport += `- **Non-Boilerplate Added Flags:** ${nonBoilerplateAdded.length}\n\n`;
-
-  if (nonBoilerplateAdded.length > 0) {
-    markdownReport += `> [!WARNING]\n`;
-    markdownReport += `> Flagged non-boilerplate text:\n`;
-    nonBoilerplateAdded.forEach((f) => {
-      markdownReport += `> - "${f}"\n`;
-    });
-    markdownReport += `\n`;
-  }
-
-  markdownReport += `### Unified Diff:\n\`\`\`diff\n`;
-  let contextCount = 0;
-  for (const item of diff) {
-    if (item.type === 'added') {
-      markdownReport += `+ ${item.text}\n`;
-    } else if (item.type === 'removed') {
-      markdownReport += `- ${item.text}\n`;
-    }
-  }
-  markdownReport += `\`\`\`\n\n---\n\n`;
+  markdown += `| ${p.name} | \`${p.urlPath}\` | ${headerMatch ? 'MATCH' : 'DIFF'} | ${mainMatch ? '**MATCH (0 diff)**' : '**FAIL**'} | ${footerMatch ? 'MATCH' : 'DIFF'} | ${mainDiffCount} |\n`;
 }
 
-console.log('=== TEXT PARITY AUDIT SUMMARY ===');
-console.table(pageSummaries);
+console.table(tableData);
 
-const outDoc = path.resolve('docs/text-parity-diff.md');
-fs.writeFileSync(outDoc, markdownReport);
-console.log('\nFull unified diff markdown written to:', outDoc);
+markdown += `\n## Per-Page Detailed Analysis\n\n`;
+for (const p of pages) {
+  const legacyHtml = fs.readFileSync(p.file, 'utf8');
+  const nextHtmlPath = path.join('.next/server/app', p.route === 'index' ? 'index.html' : `${p.route}.html`);
+  const nextHtml = fs.readFileSync(nextHtmlPath, 'utf8');
+
+  const legacy = extractLegacyRegions(legacyHtml, p.file);
+  const next = extractNextRegions(nextHtml);
+
+  markdown += `### ${p.name} (\`${p.urlPath}\`)\n\n`;
+  markdown += `- **Header Parity:** ${legacy.header === next.header ? 'PASS (100% match)' : 'DIFF'}\n`;
+  markdown += `- **Main Content Parity:** ${legacy.main === next.main ? 'PASS (0 differences, verbatim match)' : 'FAIL'}\n`;
+  markdown += `- **Footer Parity:** ${legacy.footer === next.footer ? 'PASS (100% match)' : 'DIFF'}\n`;
+  markdown += `- **Main Length:** ${next.main.length} characters\n\n`;
+}
+
+// Check FAQ JSON-LD parity
+markdown += `## FAQ JSON-LD vs Visible Accordion Parity\n\n`;
+const faqHtml = fs.readFileSync('.next/server/app/faq.html', 'utf8');
+const jsonMatch = faqHtml.match(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/);
+const schema = JSON.parse(jsonMatch[1]);
+const schemaFaqs = schema.mainEntity || [];
+const visibleItems = [...faqHtml.matchAll(/<div class="faq-item[^"]*">[\s\S]*?<button class="faq-question"[^>]*>([\s\S]*?)<\/button>[\s\S]*?<div class="faq-answer">([\s\S]*?)<\/div>\s*<\/div>/g)];
+
+let faqEqual = true;
+markdown += `| # | Question | Schema Answer Length | Visible Answer Length | Match |\n`;
+markdown += `|---|---|---|---|---|\n`;
+for (let i = 0; i < 8; i++) {
+  const schemaA = extractText(schemaFaqs[i].acceptedAnswer.text);
+  const visA = extractText(visibleItems[i][2]);
+  const m = schemaA === visA;
+  if (!m) faqEqual = false;
+  markdown += `| ${i + 1} | ${extractText(schemaFaqs[i].name)} | ${schemaA.length} | ${visA.length} | ${m ? 'PASS' : 'FAIL'} |\n`;
+}
+
+fs.writeFileSync('docs/text-parity-diff.md', markdown, 'utf8');
+
+console.log('\n--- TARGET VERIFICATION ---');
+console.log(`Main Content Parity (<main>): ${allMainZero ? 'PASS — ZERO unapproved copy differences across all 15 pages' : 'FAIL'}`);
+console.log(`FAQ JSON-LD vs Visible Answers: ${faqEqual ? 'PASS — All 8 FAQ answers match verbatim' : 'FAIL'}`);
+console.log(`Report written to: docs/text-parity-diff.md\n`);
+
+if (!allMainZero || !faqEqual) {
+  process.exit(1);
+}

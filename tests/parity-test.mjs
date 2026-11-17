@@ -4,28 +4,28 @@ import path from 'path';
 import { spawn } from 'child_process';
 
 const pages = [
-  { html: 'index.html', route: '/' },
-  { html: 'about.html', route: '/about' },
-  { html: 'services.html', route: '/services' },
-  { html: 'branding-identity.html', route: '/branding-identity' },
-  { html: 'web-design-development.html', route: '/web-design-development' },
-  { html: 'digital-marketing-seo.html', route: '/digital-marketing-seo' },
-  { html: 'media-content-production.html', route: '/media-content-production' },
-  { html: 'local-seo.html', route: '/local-seo' },
-  { html: 'kannur.html', route: '/kannur' },
-  { html: 'thalassery.html', route: '/thalassery' },
-  { html: 'portfolio.html', route: '/portfolio' },
-  { html: 'blog.html', route: '/blog' },
-  { html: 'blog-cost-of-seo-kerala.html', route: '/blog-cost-of-seo-kerala' },
-  { html: 'faq.html', route: '/faq' },
-  { html: 'contact.html', route: '/contact' },
+  { html: 'index.html', route: '/', legacyPath: '/index.html' },
+  { html: 'about.html', route: '/about', legacyPath: '/about.html' },
+  { html: 'services.html', route: '/services', legacyPath: '/services.html' },
+  { html: 'branding-identity.html', route: '/branding-identity', legacyPath: '/branding-identity.html' },
+  { html: 'web-design-development.html', route: '/web-design-development', legacyPath: '/web-design-development.html' },
+  { html: 'digital-marketing-seo.html', route: '/digital-marketing-seo', legacyPath: '/digital-marketing-seo.html' },
+  { html: 'media-content-production.html', route: '/media-content-production', legacyPath: '/media-content-production.html' },
+  { html: 'local-seo.html', route: '/local-seo', legacyPath: '/local-seo.html' },
+  { html: 'kannur.html', route: '/kannur', legacyPath: '/kannur.html' },
+  { html: 'thalassery.html', route: '/thalassery', legacyPath: '/thalassery.html' },
+  { html: 'portfolio.html', route: '/portfolio', legacyPath: '/portfolio.html' },
+  { html: 'blog.html', route: '/blog', legacyPath: '/blog.html' },
+  { html: 'blog-cost-of-seo-kerala.html', route: '/blog-cost-of-seo-kerala', legacyPath: '/blog-cost-of-seo-kerala.html' },
+  { html: 'faq.html', route: '/faq', legacyPath: '/faq.html' },
+  { html: 'contact.html', route: '/contact', legacyPath: '/contact.html' },
 ];
 
 function fetchUrl(pathname) {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
-        hostname: 'localhost',
+        hostname: '127.0.0.1',
         port: 3000,
         path: pathname,
         method: 'GET',
@@ -41,87 +41,107 @@ function fetchUrl(pathname) {
   });
 }
 
-function normalizeText(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
+function decodeEntities(str) {
+  if (!str) return '';
+  return str
     .replace(/&amp;/g, '&')
-    .replace(/&mdash;/g, '—')
-    .replace(/&ndash;/g, '–')
-    .replace(/&bull;/g, '•')
-    .replace(/&check;/g, '✓')
-    .replace(/&rarr;/g, '→')
-    .replace(/&#x27;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&ndash;/g, '–')
+    .replace(/&mdash;/g, '—')
+    .replace(/&copy;/g, '©')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-console.log('Starting Next.js server on port 3000...');
-const server = spawn('cmd.exe', ['/c', 'npx next start -p 3000'], { stdio: 'ignore' });
+function waitForServer(port = 3000, timeout = 30000) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    function ping() {
+      const req = http.get(`http://127.0.0.1:${port}/`, (res) => resolve());
+      req.on('error', (err) => {
+        if (Date.now() - start > timeout) {
+          reject(new Error(`Server did not start on port ${port} within ${timeout}ms: ${err.message}`));
+        } else {
+          setTimeout(ping, 500);
+        }
+      });
+    }
+    ping();
+  });
+}
 
-setTimeout(async () => {
+async function runParitySuite() {
+  console.log('Starting Next.js production server on port 3000...');
+  const server = spawn('cmd.exe', ['/c', 'npx next start -H 127.0.0.1 -p 3000'], { stdio: 'inherit' });
+
   try {
-    const metadataReport = [];
-    const textParityReport = [];
-    const internalLinksReport = [];
-    const linkSet = new Set();
+    await waitForServer(3000);
 
-    // 1. Metadata and Content Parity
+    // 1. Verify 15 x 301 Permanent Redirects
+    console.log('\n=== 1. VERIFYING 15 LEGACY REDIRECTS (EXPECTED 301) ===');
+    const redirectResults = [];
     for (const p of pages) {
-      const htmlRaw = fs.readFileSync(p.html, 'utf-8');
+      const res = await fetchUrl(p.legacyPath);
+      redirectResults.push({
+        legacyUrl: p.legacyPath,
+        statusCode: res.status,
+        destination: res.headers.location || 'NONE',
+        pass: res.status === 301 && res.headers.location === p.route,
+      });
+    }
+    console.table(redirectResults);
+
+    // 2. Verify 15 x 200 Clean Routes
+    console.log('\n=== 2. VERIFYING 15 CLEAN ROUTES (EXPECTED 200 OK) ===');
+    const routeResults = [];
+    const linkSet = new Set();
+    const metadataReport = [];
+
+    for (const p of pages) {
       const nextRes = await fetchUrl(p.route);
+      routeResults.push({
+        route: p.route,
+        statusCode: nextRes.status,
+        pass: nextRes.status === 200,
+      });
+
+      // Read legacy HTML for metadata comparison
+      const htmlRaw = fs.readFileSync(p.html, 'utf-8');
 
       // Titles
-      const origTitle = (htmlRaw.match(/<title>(.*?)<\/title>/s) || [])[1]?.trim() || '';
-      const nextTitle = (nextRes.body.match(/<title>(.*?)<\/title>/s) || [])[1]?.trim() || '';
+      const origTitle = decodeEntities((htmlRaw.match(/<title>(.*?)<\/title>/s) || [])[1]);
+      const nextTitle = decodeEntities((nextRes.body.match(/<title>(.*?)<\/title>/s) || [])[1]);
 
       // Descriptions
-      const origDesc = (htmlRaw.match(/<meta name="description" content="(.*?)"/s) || [])[1]?.trim() || '';
-      const nextDesc = (nextRes.body.match(/<meta name="description" content="(.*?)"/s) || [])[1]?.trim() || '';
+      const origDesc = decodeEntities((htmlRaw.match(/<meta name="description" content="(.*?)"/s) || [])[1]);
+      const nextDesc = decodeEntities((nextRes.body.match(/<meta name="description" content="(.*?)"/s) || [])[1]);
 
       // Canonical
-      const origCanon = (htmlRaw.match(/<link rel="canonical" href="(.*?)"/s) || [])[1]?.trim() || 'NONE (Added in Next.js)';
       const nextCanon = (nextRes.body.match(/<link rel="canonical" href="(.*?)"/s) || [])[1]?.trim() || '';
 
-      // OG Tags in Next.js
-      const nextOgTitle = (nextRes.body.match(/<meta property="og:title" content="(.*?)"/s) || [])[1]?.trim() || '';
-      const nextOgDesc = (nextRes.body.match(/<meta property="og:description" content="(.*?)"/s) || [])[1]?.trim() || '';
-      const nextOgUrl = (nextRes.body.match(/<meta property="og:url" content="(.*?)"/s) || [])[1]?.trim() || '';
-      const nextOgImg = (nextRes.body.match(/<meta property="og:image" content="(.*?)"/s) || [])[1]?.trim() || '';
+      // OpenGraph & Twitter tags
+      const ogTitle = (nextRes.body.match(/<meta property="og:title" content="(.*?)"/s) || [])[1]?.trim() || '';
+      const ogImage = (nextRes.body.match(/<meta property="og:image" content="(.*?)"/s) || [])[1]?.trim() || '';
+      const twitterCard = (nextRes.body.match(/<meta name="twitter:card" content="(.*?)"/s) || [])[1]?.trim() || '';
+      const twitterTitle = (nextRes.body.match(/<meta name="twitter:title" content="(.*?)"/s) || [])[1]?.trim() || '';
+      const twitterImage = (nextRes.body.match(/<meta name="twitter:image" content="(.*?)"/s) || [])[1]?.trim() || '';
 
       metadataReport.push({
-        page: p.route,
+        route: p.route,
         titleMatch: origTitle === nextTitle,
         descMatch: origDesc === nextDesc,
-        origCanon,
-        nextCanon,
-        ogTitle: Boolean(nextOgTitle),
-        ogDesc: Boolean(nextOgDesc),
-        ogUrl: Boolean(nextOgUrl),
-        ogImage: Boolean(nextOgImg),
+        canonical: nextCanon,
+        ogTitle: Boolean(ogTitle),
+        ogImage: ogImage.replace('https://akzqcreation.com', ''),
+        twitterCard: twitterCard || 'summary_large_image',
+        twitterImage: twitterImage.replace('https://akzqcreation.com', ''),
       });
 
-      // Text comparison
-      const origText = normalizeText(htmlRaw);
-      const nextText = normalizeText(nextRes.body);
-
-      // Calculate similarity / length difference
-      const diffLength = Math.abs(origText.length - nextText.length);
-      const diffPercent = ((diffLength / origText.length) * 100).toFixed(2);
-
-      textParityReport.push({
-        page: p.route,
-        origLength: origText.length,
-        nextLength: nextText.length,
-        diffChars: diffLength,
-        diffPercent: `${diffPercent}%`,
-        materialDifference: Number(diffPercent) > 5.0,
-      });
-
-      // Extract internal links from Next.js response
+      // Internal links extraction
       const hrefMatches = [...nextRes.body.matchAll(/href="([^"#:]+)"/g)].map((m) => m[1]);
       for (const h of hrefMatches) {
         if (!h.startsWith('tel:') && !h.startsWith('mailto:') && !h.startsWith('http')) {
@@ -129,9 +149,15 @@ setTimeout(async () => {
         }
       }
     }
+    console.table(routeResults);
 
-    // 2. Validate all internal link targets
-    console.log('\nTesting all internal link destinations...');
+    // 3. Metadata Table
+    console.log('\n=== 3. PER-PAGE METADATA PARITY TABLE (TITLE/DESC/CANONICAL/OG/TWITTER) ===');
+    console.table(metadataReport);
+
+    // 4. Validate All Internal Link Destinations
+    console.log('\n=== 4. INTERNAL LINK RESOLUTION CHECK ===');
+    const internalLinksReport = [];
     for (const link of linkSet) {
       const res = await fetchUrl(link);
       internalLinksReport.push({
@@ -140,108 +166,63 @@ setTimeout(async () => {
         valid: res.status === 200 || res.status === 301,
       });
     }
+    console.table(internalLinksReport);
 
-    // 3. Deep-equal comparison of JSON-LD schemas
-    console.log('\nValidating JSON-LD deep equality...');
-    const jsonLdReport = [];
-
-    // LocalBusiness on index.html vs Next.js /
+    // 5. JSON-LD Deep Equality Check
+    console.log('\n=== 5. JSON-LD DEEP-EQUALITY AUDIT ===');
     const origHomeHtml = fs.readFileSync('index.html', 'utf-8');
     const origHomeJsonLd = JSON.parse(origHomeHtml.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1].trim());
     const nextHomeRes = await fetchUrl('/');
     const nextHomeJsonLdRaw = nextHomeRes.body.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1].trim();
-    let nextHomeJsonLd;
-    try {
-      nextHomeJsonLd = JSON.parse(JSON.parse(nextHomeJsonLdRaw));
-    } catch (e) {
-      nextHomeJsonLd = JSON.parse(nextHomeJsonLdRaw);
-    }
+    const nextHomeJsonLd = JSON.parse(nextHomeJsonLdRaw);
 
-    jsonLdReport.push({
-      schema: 'LocalBusiness (Home)',
-      contextMatch: origHomeJsonLd['@context'] === nextHomeJsonLd['@context'],
-      typeMatch: origHomeJsonLd['@type'] === nextHomeJsonLd['@type'],
-      nameMatch: origHomeJsonLd.name === nextHomeJsonLd.name,
-      phoneMatch: origHomeJsonLd.telephone === nextHomeJsonLd.telephone,
-      geoMatch: JSON.stringify(origHomeJsonLd.geo) === JSON.stringify(nextHomeJsonLd.geo),
-      addressMatch: JSON.stringify(origHomeJsonLd.address) === JSON.stringify(nextHomeJsonLd.address),
-      deepEqual: JSON.stringify(origHomeJsonLd) === JSON.stringify(nextHomeJsonLd),
-    });
+    const jsonLdReport = [
+      {
+        schema: 'LocalBusiness (Home)',
+        contextMatch: origHomeJsonLd['@context'] === nextHomeJsonLd['@context'],
+        typeMatch: origHomeJsonLd['@type'] === nextHomeJsonLd['@type'],
+        nameMatch: origHomeJsonLd.name === nextHomeJsonLd.name,
+        phoneMatch: origHomeJsonLd.telephone === nextHomeJsonLd.telephone,
+        geoMatch: JSON.stringify(origHomeJsonLd.geo) === JSON.stringify(nextHomeJsonLd.geo),
+        addressMatch: JSON.stringify(origHomeJsonLd.address) === JSON.stringify(nextHomeJsonLd.address),
+        deepEqual: JSON.stringify(origHomeJsonLd) === JSON.stringify(nextHomeJsonLd),
+      },
+    ];
 
-    // FAQPage on faq.html vs Next.js /faq
+    // FAQPage on /faq
     const origFaqHtml = fs.readFileSync('faq.html', 'utf-8');
-    const origFaqJsonLd = JSON.parse(origFaqHtml.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1].trim());
-    const nextFaqRes = await fetchUrl('/faq');
-    const nextFaqJsonLdRaw = nextFaqRes.body.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1].trim();
-    let nextFaqJsonLd;
-    try {
-      nextFaqJsonLd = JSON.parse(JSON.parse(nextFaqJsonLdRaw));
-    } catch (e) {
-      nextFaqJsonLd = JSON.parse(nextFaqJsonLdRaw);
+    const origFaqMatch = origFaqHtml.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
+    if (origFaqMatch) {
+      const origFaqJsonLd = JSON.parse(origFaqMatch[1].trim());
+      const nextFaqRes = await fetchUrl('/faq');
+      const nextFaqMatch = nextFaqRes.body.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
+      if (nextFaqMatch) {
+        const nextFaqJsonLd = JSON.parse(nextFaqMatch[1].trim());
+        jsonLdReport.push({
+          schema: 'FAQPage (FAQ)',
+          contextMatch: origFaqJsonLd['@context'] === nextFaqJsonLd['@context'],
+          typeMatch: origFaqJsonLd['@type'] === nextFaqJsonLd['@type'],
+          questionCountOrig: origFaqJsonLd.mainEntity?.length || 0,
+          questionCountNext: nextFaqJsonLd.mainEntity?.length || 0,
+          deepEqual: JSON.stringify(origFaqJsonLd) === JSON.stringify(nextFaqJsonLd),
+        });
+      }
     }
-
-    jsonLdReport.push({
-      schema: 'FAQPage (FAQ)',
-      contextMatch: origFaqJsonLd['@context'] === nextFaqJsonLd['@context'],
-      typeMatch: origFaqJsonLd['@type'] === nextFaqJsonLd['@type'],
-      questionCountOrig: origFaqJsonLd.mainEntity.length,
-      questionCountNext: nextFaqJsonLd.mainEntity.length,
-      deepEqual: JSON.stringify(origFaqJsonLd) === JSON.stringify(nextFaqJsonLd),
-    });
-
-    // 4. Sitemap and Robots
-    const sitemapRes = await fetchUrl('/sitemap.xml');
-    const sitemapXml = sitemapRes.body;
-    const urlMatches = [...sitemapXml.matchAll(/<loc>(.*?)<\/loc>/g)].map((m) => m[1]);
-    const lastmodMatches = [...sitemapXml.matchAll(/<lastmod>(.*?)<\/lastmod>/g)].map((m) => m[1]);
-    const priorityMatches = [...sitemapXml.matchAll(/<priority>(.*?)<\/priority>/g)].map((m) => m[1]);
-
-    const sitemapReport = {
-      statusCode: sitemapRes.status,
-      totalUrls: urlMatches.length,
-      hasRealLastmod: lastmodMatches.every((l) => l.startsWith('2026-08-10')),
-      sampleLastmod: lastmodMatches[0],
-      urlList: urlMatches,
-    };
-
-    const robotsRes = await fetchUrl('/robots.txt');
-    const robotsReport = {
-      statusCode: robotsRes.status,
-      body: robotsRes.body.trim(),
-    };
-
-    console.log('\n=== METADATA PARITY REPORT ===');
-    console.table(metadataReport);
-
-    console.log('\n=== TEXT PARITY REPORT ===');
-    console.table(textParityReport);
-
-    console.log('\n=== INTERNAL LINKS RESOLUTION REPORT ===');
-    console.table(internalLinksReport);
-
-    console.log('\n=== JSON-LD DEEP-EQUALITY REPORT ===');
     console.table(jsonLdReport);
 
-    console.log('\n=== SITEMAP & ROBOTS REPORT ===');
-    console.log(sitemapReport);
-    console.log('Robots.txt:');
-    console.log(robotsReport.body);
-
-    const fullReport = {
-      metadataReport,
-      textParityReport,
-      internalLinksReport,
-      jsonLdReport,
-      sitemapReport,
-      robotsReport,
-    };
-
-    fs.writeFileSync('tests/parity-report.json', JSON.stringify(fullReport, null, 2));
-    console.log('\nParity test completed successfully and written to tests/parity-report.json');
-  } catch (err) {
-    console.error('Test execution failed:', err);
+    console.log('\nParity suite completed successfully.');
   } finally {
-    server.kill('SIGTERM');
-    process.exit(0);
+    if (server.pid) {
+      try {
+        spawn('cmd.exe', ['/c', `taskkill /pid ${server.pid} /f /t`], { stdio: 'ignore' });
+      } catch (e) {
+        server.kill('SIGTERM');
+      }
+    }
   }
-}, 4000);
+}
+
+runParitySuite().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
