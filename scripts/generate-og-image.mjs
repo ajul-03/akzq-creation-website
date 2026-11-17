@@ -122,7 +122,6 @@ async function generateOgImage() {
   <div>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
       <div class="header-logo">${logoSvg}</div>
-      <div class="badge-pill">● Placeholder Share Image</div>
     </div>
     <h1 class="main-title">Digital Marketing &amp; Web Design with <span class="accent-text">Fixed Pricing</span></h1>
     <p class="subtitle">North Malabar's transparent creative and digital growth agency. Serving ambitious brands in Kannur, Thalassery, and beyond.</p>
