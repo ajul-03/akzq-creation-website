@@ -6,9 +6,19 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:validate": "prisma validate",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:test": "tsx tests/db.test.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.4.1",
     "clsx": "^2.1.1",
     "next": "^16.4.6",
     "react": "^19.3.1",
@@ -24,7 +34,9 @@
     "chrome-launcher": "^1.2.3",
     "lighthouse": "^13.6.0",
     "postcss": "^8.5.33",
+    "prisma": "^6.4.1",
     "tailwindcss": "^3.4.15",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.3"
   }
 }

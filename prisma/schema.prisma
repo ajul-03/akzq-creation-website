@@ -1,0 +1,328 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+  CLIENT
+}
+
+enum LeadSource {
+  CONTACT_FORM
+  SERVICE_PAGE
+  WHATSAPP_CLICK
+  CALL_CLICK
+  OTHER
+}
+
+enum BudgetRange {
+  STARTER
+  GROWTH
+  CUSTOM
+  UNSPECIFIED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUOTED
+  WON
+  LOST
+  SPAM
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ServiceItemKind {
+  PROBLEM
+  FEATURE
+  BENEFIT
+  PROCESS_STEP
+  DELIVERABLE
+}
+
+enum PostContentFormat {
+  HTML
+  TIPTAP_JSON
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  name            String?
+  phone           String?
+  passwordHash    String?
+  emailVerifiedAt DateTime?
+  role            UserRole       @default(CLIENT)
+  isActive        Boolean        @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  clientProfile   ClientProfile?
+  assignedLeads   Lead[]         @relation("AssignedLeads")
+  userLeads       Lead[]         @relation("UserLeads")
+  activityLogs    ActivityLog[]
+  uploadedMedia   Media[]
+  posts           Post[]
+}
+
+model ClientProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  businessName String
+  website      String?
+  city         String?
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Lead {
+  id              String      @id @default(cuid())
+  source          LeadSource
+  name            String
+  email           String
+  phone           String?
+  company         String?
+  serviceId       String?
+  serviceInterest String?     @db.Text
+  budgetRange     BudgetRange @default(UNSPECIFIED)
+  message         String?     @db.Text
+  status          LeadStatus  @default(NEW)
+  assignedToId    String?
+  userId          String?
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  referrer        String?
+  ipHash          String?
+  userAgent       String?
+  consentGivenAt  DateTime?
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  service         Service?    @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  assignedTo      User?       @relation("AssignedLeads", fields: [assignedToId], references: [id], onDelete: SetNull)
+  user            User?       @relation("UserLeads", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([email])
+  @@index([assignedToId])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  ipHash     String?
+  createdAt  DateTime @default(now())
+
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+}
+
+model Media {
+  id             String         @id @default(cuid())
+  storageKey     String         @unique
+  mimeType       String
+  byteSize       Int
+  width          Int?
+  height         Int?
+  alt            String?
+  caption        String?
+  focalX         Float          @default(50)
+  focalY         Float          @default(50)
+  isPublic       Boolean        @default(true)
+  checksumSha256 String?
+  variants       Json?
+  uploadedById   String
+  deletedAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  uploadedBy     User           @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  serviceHero    Service[]      @relation("ServiceHeroMedia")
+  serviceMedia   ServiceMedia[]
+  portfolioCover PortfolioProject[] @relation("PortfolioCoverMedia")
+  featuredPosts  Post[]         @relation("PostFeaturedMedia")
+}
+
+model Service {
+  id               String         @id @default(cuid())
+  slug             String         @unique
+  title            String
+  shortDescription String
+  overview         String?        @db.Text
+  status           ContentStatus  @default(PUBLISHED)
+  sortOrder        Int            @default(0)
+  iconKey          String?
+  visualKey        String?
+  heroMediaId      String?
+  seoTitle         String?
+  metaDescription  String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  heroMedia        Media?         @relation("ServiceHeroMedia", fields: [heroMediaId], references: [id], onDelete: SetNull)
+  items            ServiceItem[]
+  media            ServiceMedia[]
+  faqs             Faq[]
+  leads            Lead[]
+
+  @@index([status, sortOrder])
+}
+
+model ServiceItem {
+  id          String          @id @default(cuid())
+  serviceId   String
+  kind        ServiceItemKind
+  title       String
+  description String?         @db.Text
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  service     Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, kind, sortOrder])
+}
+
+model ServiceMedia {
+  id        String   @id @default(cuid())
+  serviceId String
+  mediaId   String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, mediaId])
+}
+
+model Faq {
+  id        String        @id @default(cuid())
+  question  String        @unique
+  answer    String        @db.Text
+  serviceId String?
+  sortOrder Int           @default(0)
+  status    ContentStatus @default(PUBLISHED)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  service   Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([status, sortOrder])
+  @@index([serviceId])
+}
+
+model PortfolioProject {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  title        String
+  category     String
+  summary      String?       @db.Text
+  tags         String[]
+  scope        Json?
+  isConcept    Boolean       @default(true)
+  status       ContentStatus @default(PUBLISHED)
+  sortOrder    Int           @default(0)
+  coverMediaId String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  coverMedia   Media?        @relation("PortfolioCoverMedia", fields: [coverMediaId], references: [id], onDelete: SetNull)
+
+  @@index([status, sortOrder])
+}
+
+model BlogCategory {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts       Post[]
+}
+
+model BlogTag {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  postTags  PostTag[]
+}
+
+model Post {
+  id                 String            @id @default(cuid())
+  slug               String            @unique
+  title              String
+  excerpt            String?           @db.Text
+  content            String            @db.Text
+  contentFormat      PostContentFormat @default(HTML)
+  status             PostStatus        @default(DRAFT)
+  publishedAt        DateTime?
+  authorId           String?
+  categoryId         String?
+  featuredMediaId    String?
+  featuredImageAlt   String?
+  readingTimeMinutes Int?
+  seoTitle           String?
+  metaDescription    String?
+  canonicalUrl       String?
+  deletedAt          DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  author             User?             @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  category           BlogCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  featuredMedia      Media?            @relation("PostFeaturedMedia", fields: [featuredMediaId], references: [id], onDelete: SetNull)
+  postTags           PostTag[]
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([categoryId])
+}
+
+model PostTag {
+  postId    String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag       BlogTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+}
