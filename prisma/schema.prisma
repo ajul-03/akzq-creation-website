@@ -18,8 +18,6 @@ enum UserRole {
 enum LeadSource {
   CONTACT_FORM
   SERVICE_PAGE
-  WHATSAPP_CLICK
-  CALL_CLICK
   OTHER
 }
 
@@ -231,7 +229,8 @@ model ServiceMedia {
 
 model Faq {
   id        String        @id @default(cuid())
-  question  String        @unique
+  seedKey   String?       @unique
+  question  String
   answer    String        @db.Text
   serviceId String?
   sortOrder Int           @default(0)

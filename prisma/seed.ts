@@ -5,6 +5,7 @@ import path from "path";
 const prisma = new PrismaClient();
 
 interface ExtractedFaq {
+  seedKey: string;
   question: string;
   answer: string;
   sortOrder: number;
@@ -53,7 +54,9 @@ function extractFaqs(): ExtractedFaq[] {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
       .trim();
+    const seedKey = `faq-${idx + 1}`;
     return {
+      seedKey,
       question,
       answer,
       sortOrder: idx + 1,
@@ -168,18 +171,20 @@ function extractBlog() {
 export async function main() {
   console.log("=== SEEDING DATABASE (IDEMPOTENT) ===");
 
-  // 1. FAQs (serviceId null)
+  // 1. FAQs (serviceId null, upserted by seedKey)
   const faqs = extractFaqs();
   for (const faq of faqs) {
     await prisma.faq.upsert({
-      where: { question: faq.question },
+      where: { seedKey: faq.seedKey },
       update: {
+        question: faq.question,
         answer: faq.answer,
         sortOrder: faq.sortOrder,
         status: faq.status,
         serviceId: faq.serviceId,
       },
       create: {
+        seedKey: faq.seedKey,
         question: faq.question,
         answer: faq.answer,
         sortOrder: faq.sortOrder,
