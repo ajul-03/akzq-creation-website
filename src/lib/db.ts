@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 const globalForPrisma = globalThis as unknown as {
+  prismaInstance: PrismaClient | undefined;
   prisma: PrismaClient | undefined;
 };
 
@@ -21,16 +22,20 @@ function createClient(): PrismaClient {
 }
 
 export function getDb(): PrismaClient {
-  if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = createClient();
+  if (!globalForPrisma.prismaInstance) {
+    globalForPrisma.prismaInstance = createClient();
   }
-  return globalForPrisma.prisma;
+  return globalForPrisma.prismaInstance;
+}
+
+export function resetDb(): void {
+  globalForPrisma.prismaInstance = undefined;
 }
 
 export const db = new Proxy({} as PrismaClient, {
   get(_target, prop) {
     const client = getDb();
-    const val = (client as any)[prop];
+    const val = Reflect.get(client, prop);
     if (typeof val === "function") {
       return val.bind(client);
     }
@@ -39,5 +44,5 @@ export const db = new Proxy({} as PrismaClient, {
 });
 
 if (process.env.NODE_ENV !== "production") {
-  (globalThis as any).prisma = db;
+  globalForPrisma.prisma = db;
 }
