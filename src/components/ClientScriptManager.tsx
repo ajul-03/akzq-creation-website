@@ -136,23 +136,70 @@ export function ClientScriptManager() {
     const form = document.getElementById("agencyQuoteForm") as HTMLFormElement | null;
     const successModal = document.getElementById("formSuccessModal");
     const closeSuccessBtn = document.getElementById("closeSuccessModal");
+    const formRenderTime = Date.now();
+
     if (form) {
-      form.addEventListener("submit", (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault();
+
+        // Remove any prior error notification
+        const oldErr = document.getElementById("formFallbackError");
+        if (oldErr) oldErr.remove();
+
         const name = (form.querySelector('[name="name"]') as HTMLInputElement)?.value.trim();
-        const service = (form.querySelector('[name="service"]') as HTMLSelectElement)?.value;
+        const email = (form.querySelector('[name="email"]') as HTMLInputElement)?.value.trim();
+        const phone = (form.querySelector('[name="phone"]') as HTMLInputElement)?.value.trim() || null;
+        const company = (form.querySelector('[name="company"]') as HTMLInputElement)?.value.trim() || null;
+        const service = (form.querySelector('[name="service"]') as HTMLSelectElement)?.value || "";
         const budget =
           (form.querySelector('input[name="budget"]:checked') as HTMLInputElement)?.value ||
-          "Standard Scope";
+          "Growth (₹30k - ₹60k)";
+        const message = (form.querySelector('[name="details"]') as HTMLTextAreaElement)?.value.trim() || null;
+        const hp_field = (form.querySelector('[name="hp_field"]') as HTMLInputElement)?.value || "";
+        const elapsedMs = Date.now() - formRenderTime;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const utmSource = urlParams.get("utm_source") || null;
+        const utmMedium = urlParams.get("utm_medium") || null;
+        const utmCampaign = urlParams.get("utm_campaign") || null;
+        const referrer = document.referrer || null;
 
         const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+        const origText = submitBtn ? submitBtn.innerHTML : "";
         if (submitBtn) {
-          const origText = submitBtn.innerHTML;
           submitBtn.disabled = true;
           submitBtn.innerHTML = "Preparing Fixed Proposal...";
-          setTimeout(() => {
+        }
+
+        try {
+          const response = await fetch("/api/leads", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name,
+              email,
+              phone,
+              company,
+              service,
+              budgetRange: budget,
+              message,
+              utmSource,
+              utmMedium,
+              utmCampaign,
+              referrer,
+              hp_field,
+              elapsedMs,
+            }),
+          });
+
+          if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = origText;
+          }
+
+          if (response.status === 201) {
             const successName = document.getElementById("successClientName");
             if (successName) successName.textContent = name;
             const waBtn = document.getElementById("successWhatsAppBtn") as HTMLAnchorElement | null;
@@ -167,7 +214,26 @@ export function ClientScriptManager() {
               document.body.style.overflow = "hidden";
             }
             form.reset();
-          }, 600);
+            return;
+          }
+
+          // Error handling
+          let errorMessage = "Unable to submit form. Please contact us directly at +91 75101 09730 or via WhatsApp.";
+          const errDiv = document.createElement("div");
+          errDiv.id = "formFallbackError";
+          errDiv.style.cssText = "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
+          errDiv.innerHTML = `Unable to submit form. Please contact us directly at <a href="tel:+917510109730" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">+91 75101 09730</a> or via <a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">WhatsApp</a>.`;
+          form.insertBefore(errDiv, form.firstChild);
+        } catch {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = origText;
+          }
+          const errDiv = document.createElement("div");
+          errDiv.id = "formFallbackError";
+          errDiv.style.cssText = "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
+          errDiv.innerHTML = `Unable to submit form. Please contact us directly at <a href="tel:+917510109730" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">+91 75101 09730</a> or via <a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">WhatsApp</a>.`;
+          form.insertBefore(errDiv, form.firstChild);
         }
       });
     }

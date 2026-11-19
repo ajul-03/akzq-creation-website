@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export function ContactForm() {
   const [submitted, setSubmitted] = useState(false);
@@ -8,6 +8,13 @@ export function ContactForm() {
   const [clientName, setClientName] = useState("");
   const [whatsAppLink, setWhatsAppLink] = useState("");
   const [selectedService, setSelectedService] = useState("");
+  const [fallbackError, setFallbackError] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [renderTime, setRenderTime] = useState<number>(Date.now());
+
+  useEffect(() => {
+    setRenderTime(Date.now());
+  }, []);
 
   const estimates: Record<string, string> = {
     "Branding & Identity":
@@ -22,46 +29,117 @@ export function ContactForm() {
       "Includes Google Business Profile optimization, Kannur & Thalassery local citation building, and review workflows.",
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setFallbackError(false);
+    setFieldErrors({});
+
     const form = e.currentTarget;
     const formData = new FormData(form);
 
     const name = (formData.get("name") as string)?.trim();
     const email = (formData.get("email") as string)?.trim();
+    const phone = (formData.get("phone") as string)?.trim() || null;
+    const company = (formData.get("company") as string)?.trim() || null;
     const service = (formData.get("service") as string) || "";
-    const budget = (formData.get("budget") as string) || "Standard Scope";
+    const budget = (formData.get("budget") as string) || "Growth (₹30k - ₹60k)";
+    const message = (formData.get("details") as string)?.trim() || null;
+    const hp_field = (formData.get("hp_field") as string) || "";
+    const elapsedMs = Date.now() - renderTime;
 
-    if (!name || !email || !service) {
-      alert("Please fill in your Name, Email, and select the Required Service.");
-      return;
-    }
+    const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const utmSource = urlParams?.get("utm_source") || null;
+    const utmMedium = urlParams?.get("utm_medium") || null;
+    const utmCampaign = urlParams?.get("utm_campaign") || null;
+    const referrer = typeof document !== "undefined" ? document.referrer || null : null;
 
     setSubmitting(true);
 
-    setTimeout(() => {
-      setSubmitting(false);
-      setClientName(name);
+    try {
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          phone,
+          company,
+          service,
+          budgetRange: budget,
+          message,
+          utmSource,
+          utmMedium,
+          utmCampaign,
+          referrer,
+          hp_field,
+          elapsedMs,
+        }),
+      });
 
-      const text = encodeURIComponent(
-        `Hi AKZQ.Creation, I am ${name}. I requested a fixed-price quote for ${service}. (Budget Range: ${budget}). Let's discuss!`
-      );
-      setWhatsAppLink(`https://wa.me/917510109730?text=${text}`);
-      setSubmitted(true);
-      document.body.style.overflow = "hidden";
-      form.reset();
-      setSelectedService("");
-    }, 600);
+      if (response.status === 201) {
+        setSubmitting(false);
+        setClientName(name);
+
+        const text = encodeURIComponent(
+          `Hi AKZQ.Creation, I am ${name}. I requested a fixed-price quote for ${service}. (Budget Range: ${budget}). Let's discuss!`
+        );
+        setWhatsAppLink(`https://wa.me/917510109730?text=${text}`);
+        setSubmitted(true);
+        if (typeof document !== "undefined") {
+          document.body.style.overflow = "hidden";
+        }
+        form.reset();
+        setSelectedService("");
+        return;
+      }
+
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        setSubmitting(false);
+        const data = await response.json();
+        if (data.errors) {
+          const flat: Record<string, string> = {};
+          for (const [k, v] of Object.entries(data.errors)) {
+            if (Array.isArray(v) && v.length > 0) flat[k] = v[0] as string;
+          }
+          setFieldErrors(flat);
+        } else if (data.error) {
+          setFieldErrors({ general: data.error });
+        }
+        return;
+      }
+
+      // 429, 503, or other error
+      setSubmitting(false);
+      setFallbackError(true);
+    } catch {
+      // Network failure
+      setSubmitting(false);
+      setFallbackError(true);
+    }
   };
 
   const closeModal = () => {
     setSubmitted(false);
-    document.body.style.overflow = "";
+    if (typeof document !== "undefined") {
+      document.body.style.overflow = "";
+    }
   };
 
   return (
     <>
       <form id="agencyQuoteForm" className="quote-form" onSubmit={handleSubmit}>
+        {/* Off-screen honeypot input */}
+        <input
+          type="text"
+          name="hp_field"
+          tabIndex={-1}
+          autoComplete="off"
+          style={{ position: "absolute", left: "-9999px", opacity: 0, height: 0, width: 0 }}
+          aria-hidden="true"
+        />
+
         <div className="form-group-row">
           <div className="form-group">
             <label htmlFor="clientName">
@@ -75,6 +153,11 @@ export function ContactForm() {
               placeholder="e.g. Rahul Nambiar"
               className="form-control"
             />
+            {fieldErrors.name && (
+              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
+                {fieldErrors.name}
+              </span>
+            )}
           </div>
 
           <div className="form-group">
@@ -89,6 +172,11 @@ export function ContactForm() {
               placeholder="e.g. rahul@business.com"
               className="form-control"
             />
+            {fieldErrors.email && (
+              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
+                {fieldErrors.email}
+              </span>
+            )}
           </div>
         </div>
 
@@ -102,9 +190,32 @@ export function ContactForm() {
               placeholder="e.g. +91 75101 09730"
               className="form-control"
             />
+            {fieldErrors.phone && (
+              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
+                {fieldErrors.phone}
+              </span>
+            )}
           </div>
 
           <div className="form-group">
+            <label htmlFor="clientCompany">Company / Business Name</label>
+            <input
+              type="text"
+              id="clientCompany"
+              name="company"
+              placeholder="e.g. Malabar Retail Co."
+              className="form-control"
+            />
+            {fieldErrors.company && (
+              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
+                {fieldErrors.company}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="form-group-row">
+          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
             <label htmlFor="serviceRequiredSelect">
               Required Service <span className="req">*</span>
             </label>
@@ -130,10 +241,15 @@ export function ContactForm() {
                 Media &amp; Content Production
               </option>
               <option value="Local SEO">Local SEO (Google Maps Dominance)</option>
-              <option value="Complete Agency Growth Package">
-                Complete Agency Growth Package
+              <option value="Multi-Service Custom Package">
+                Multi-Service Custom Package
               </option>
             </select>
+            {fieldErrors.service && (
+              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
+                {fieldErrors.service}
+              </span>
+            )}
           </div>
         </div>
 
@@ -187,6 +303,41 @@ export function ContactForm() {
             className="form-control"
           ></textarea>
         </div>
+
+        {/* Fallback error line on 429/503/network failure */}
+        {fallbackError && (
+          <div
+            id="formFallbackError"
+            style={{
+              padding: "12px 16px",
+              marginBottom: "16px",
+              borderRadius: "6px",
+              backgroundColor: "rgba(229, 62, 62, 0.1)",
+              border: "1px solid rgba(229, 62, 62, 0.3)",
+              color: "#e53e3e",
+              fontSize: "0.9rem",
+              lineHeight: 1.5,
+            }}
+          >
+            Unable to submit form. Please contact us directly at{" "}
+            <a
+              href="tel:+917510109730"
+              style={{ color: "#e53e3e", fontWeight: 600, textDecoration: "underline" }}
+            >
+              +91 75101 09730
+            </a>{" "}
+            or via{" "}
+            <a
+              href="https://wa.me/917510109730"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#e53e3e", fontWeight: 600, textDecoration: "underline" }}
+            >
+              WhatsApp
+            </a>
+            .
+          </div>
+        )}
 
         <button
           type="submit"

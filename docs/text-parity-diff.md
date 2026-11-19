@@ -1,6 +1,6 @@
 # Text Parity Region-by-Region Diff Report (Header, Main, Footer)
 
-Generated on: 2026-11-18T18:01:08.494Z
+Generated on: 2026-11-19T18:36:37.215Z
 
 Comparing legacy static HTML against Next.js rendered HTML across three separate structural regions:
 - **Header:** site navigation, brand mark, utility links
