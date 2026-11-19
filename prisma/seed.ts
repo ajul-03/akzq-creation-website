@@ -1,4 +1,5 @@
 import { PrismaClient, ContentStatus, PostContentFormat, PostStatus } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import fs from "fs";
 import path from "path";
 
@@ -6,7 +7,9 @@ let defaultPrisma: PrismaClient | null = null;
 function getPrisma(client?: PrismaClient): PrismaClient {
   if (client) return client;
   if (!defaultPrisma) {
-    defaultPrisma = new PrismaClient();
+    const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
+    const adapter = connectionString ? new PrismaPg({ connectionString }) : undefined;
+    defaultPrisma = new PrismaClient({ adapter });
   }
   return defaultPrisma;
 }

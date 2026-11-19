@@ -3,9 +3,10 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import EmbeddedPostgres from "embedded-postgres";
 import pg from "pg";
-import { db } from "../src/lib/db";
+import { db, getDb } from "../src/lib/db";
 import { main as runSeed } from "../prisma/seed";
 
 const TEST_PORT = 54332;
@@ -94,6 +95,7 @@ async function runSuite() {
       ...process.env,
       DATABASE_URL: TEST_DB_URL,
       DIRECT_URL: TEST_DB_URL,
+      SHADOW_DATABASE_URL: SHADOW_DB_URL,
     };
     const deployOutput = execSync("npx prisma migrate deploy", {
       env: deployEnv,
@@ -104,7 +106,7 @@ async function runSuite() {
 
     // 4. Real Schema vs Migration Drift Check (--exit-code)
     console.log("--- 4. Real Migration Drift Check (prisma migrate diff --exit-code) ---");
-    const diffCmd = `npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url ${SHADOW_DB_URL} --exit-code`;
+    const diffCmd = `npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code`;
     const diffOutput = execSync(diffCmd, {
       env: deployEnv,
       encoding: "utf8",
@@ -113,9 +115,8 @@ async function runSuite() {
     console.log("✓ prisma migrate diff --exit-code exited 0 (ZERO DRIFT).\n");
 
     // Connect test PrismaClient
-    const testPrisma = new PrismaClient({
-      datasourceUrl: TEST_DB_URL,
-    });
+    const adapter = new PrismaPg({ connectionString: TEST_DB_URL });
+    const testPrisma = new PrismaClient({ adapter });
 
     // 5. Seed Honesty & Idempotency (Twice against real test DB)
     console.log("--- 5. Seed Honesty & Idempotency Execution ---");
