@@ -19,3 +19,4 @@ next-env.d.ts
 Thumbs.db
 .DS_Store
 *.log
+.test-pg-data/

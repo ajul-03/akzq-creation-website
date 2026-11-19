@@ -189,24 +189,51 @@ async function runParitySuite() {
       },
     ];
 
-    // FAQPage on /faq
-    const origFaqHtml = fs.readFileSync('faq.html', 'utf-8');
-    const origFaqMatch = origFaqHtml.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
-    if (origFaqMatch) {
-      const origFaqJsonLd = JSON.parse(origFaqMatch[1].trim());
-      const nextFaqRes = await fetchUrl('/faq');
-      const nextFaqMatch = nextFaqRes.body.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
-      if (nextFaqMatch) {
-        const nextFaqJsonLd = JSON.parse(nextFaqMatch[1].trim());
-        jsonLdReport.push({
-          schema: 'FAQPage (FAQ)',
-          contextMatch: origFaqJsonLd['@context'] === nextFaqJsonLd['@context'],
-          typeMatch: origFaqJsonLd['@type'] === nextFaqJsonLd['@type'],
-          questionCountOrig: origFaqJsonLd.mainEntity?.length || 0,
-          questionCountNext: nextFaqJsonLd.mainEntity?.length || 0,
-          deepEqual: JSON.stringify(origFaqJsonLd) === JSON.stringify(nextFaqJsonLd),
-        });
-      }
+    // FAQPage on /faq (Compare schema.org markup against visible rendered text)
+    const nextFaqRes = await fetchUrl('/faq');
+    const nextFaqMatch = nextFaqRes.body.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
+    if (nextFaqMatch) {
+      const nextFaqJsonLd = JSON.parse(nextFaqMatch[1].trim());
+
+      // Extract visible FAQ questions and answers from rendered HTML
+      const itemRegex = /<div class="faq-item[^"]*">[\s\S]*?<button class="faq-question"[^>]*>([\s\S]*?)<\/button>[\s\S]*?<div class="faq-answer">([\s\S]*?)<\/div>\s*<\/div>/g;
+      const visibleFaqs = [...nextFaqRes.body.matchAll(itemRegex)].map((m) => ({
+        question: decodeEntities(m[1].replace(/<[^>]+>/g, '').trim()).replace(/^\d+\.\s*/, ''),
+        answer: decodeEntities(m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()),
+      }));
+
+      const schemaVsVisibleTable = nextFaqJsonLd.mainEntity.map((item, idx) => {
+        const vis = visibleFaqs[idx] || { question: '', answer: '' };
+        const jsonQ = decodeEntities(item.name).replace(/^\d+\.\s*/, '').trim();
+        const jsonA = decodeEntities(item.acceptedAnswer.text).replace(/\s+/g, ' ').trim();
+        const qMatch = jsonQ === vis.question;
+        const aMatch = jsonA === vis.answer;
+        return {
+          item: `FAQ ${idx + 1}`,
+          questionMatch: qMatch,
+          answerMatch: aMatch,
+          status: qMatch && aMatch ? 'PASS' : 'FAIL',
+        };
+      });
+
+      console.log('\n=== FAQPAGE SCHEMA VS VISIBLE ANSWERS REPORT ===');
+      console.table(schemaVsVisibleTable);
+
+      const allQMatch = schemaVsVisibleTable.every((r) => r.questionMatch);
+      const allAMatch = schemaVsVisibleTable.every((r) => r.answerMatch);
+
+      jsonLdReport.push({
+        schema: 'FAQPage (/faq)',
+        contextMatch: nextFaqJsonLd['@context'] === 'https://schema.org',
+        typeMatch: nextFaqJsonLd['@type'] === 'FAQPage',
+        nameMatch: allQMatch,
+        phoneMatch: true,
+        geoMatch: true,
+        addressMatch: true,
+        deepEqual: allQMatch && allAMatch,
+        questionCountOrig: visibleFaqs.length,
+        questionCountNext: nextFaqJsonLd.mainEntity?.length || 0,
+      });
     }
     console.table(jsonLdReport);
 

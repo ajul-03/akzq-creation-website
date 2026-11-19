@@ -2,7 +2,14 @@ import { PrismaClient, ContentStatus, PostContentFormat, PostStatus } from "@pri
 import fs from "fs";
 import path from "path";
 
-const prisma = new PrismaClient();
+let defaultPrisma: PrismaClient | null = null;
+function getPrisma(client?: PrismaClient): PrismaClient {
+  if (client) return client;
+  if (!defaultPrisma) {
+    defaultPrisma = new PrismaClient();
+  }
+  return defaultPrisma;
+}
 
 interface ExtractedFaq {
   seedKey: string;
@@ -136,16 +143,31 @@ function extractBlog() {
   const rawHtml = JSON.parse(match[1]);
 
   const titleMatch = rawHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/);
-  const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim() : "";
+  if (!titleMatch) throw new Error("Failed to extract blog title from page");
+  const title = titleMatch[1].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
 
   const pMatch = rawHtml.match(/<p class="lead"[^>]*>([\s\S]*?)<\/p>/) || rawHtml.match(/<article[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/);
-  const excerpt = pMatch ? pMatch[1].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim() : "";
+  if (!pMatch) throw new Error("Failed to extract blog excerpt from page");
+  const excerpt = pMatch[1].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
 
+  // Extract badges directly from rendered HTML — no hardcoded fallback strings
   const badges = [...rawHtml.matchAll(/<span class="badge[^"]*"[^>]*>([\s\S]*?)<\/span>/g)].map((b) => b[1].replace(/<[^>]+>/g, "").trim());
-  const categoryName = badges[0] || "Kerala SEO Guide";
+  if (badges.length === 0) throw new Error("Failed to extract badges from blog page");
+
+  // Primary badge maps to category, secondary badge maps to tag
+  const categoryName = badges[0];
   const categorySlug = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  const tagName = badges[1] || "Pricing Transparency";
-  const tagSlug = tagName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+  let tagData: { slug: string; name: string } | null = null;
+  if (badges[1]) {
+    const tagName = badges[1];
+    const tagSlug = tagName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    tagData = { slug: tagSlug, name: tagName };
+  }
+
+  // Legacy blog HTML does not specify a publication date (datesFound: null, timeTags: null)
+  // Therefore publishedAt is set to null (no invented dates)
+  const publishedAt: Date | null = null;
 
   return {
     post: {
@@ -155,20 +177,18 @@ function extractBlog() {
       content: rawHtml,
       contentFormat: PostContentFormat.HTML,
       status: PostStatus.PUBLISHED,
-      publishedAt: new Date("2026-01-15T00:00:00.000Z"),
+      publishedAt,
     },
     category: {
       slug: categorySlug,
       name: categoryName,
     },
-    tag: {
-      slug: tagSlug,
-      name: tagName,
-    },
+    tag: tagData,
   };
 }
 
-export async function main() {
+export async function main(client?: PrismaClient) {
+  const prisma = getPrisma(client);
   console.log("=== SEEDING DATABASE (IDEMPOTENT) ===");
 
   // 1. FAQs (serviceId null, upserted by seedKey)
@@ -252,11 +272,15 @@ export async function main() {
     create: { slug: blog.category.slug, name: blog.category.name },
   });
 
-  const tag = await prisma.blogTag.upsert({
-    where: { slug: blog.tag.slug },
-    update: { name: blog.tag.name },
-    create: { slug: blog.tag.slug, name: blog.tag.name },
-  });
+  let tagId: string | null = null;
+  if (blog.tag) {
+    const tag = await prisma.blogTag.upsert({
+      where: { slug: blog.tag.slug },
+      update: { name: blog.tag.name },
+      create: { slug: blog.tag.slug, name: blog.tag.name },
+    });
+    tagId = tag.id;
+  }
 
   const post = await prisma.post.upsert({
     where: { slug: blog.post.slug },
@@ -281,20 +305,22 @@ export async function main() {
     },
   });
 
-  // PostTag join
-  await prisma.postTag.upsert({
-    where: {
-      postId_tagId: {
-        postId: post.id,
-        tagId: tag.id,
+  // PostTag join only if tag exists
+  if (tagId) {
+    await prisma.postTag.upsert({
+      where: {
+        postId_tagId: {
+          postId: post.id,
+          tagId,
+        },
       },
-    },
-    update: {},
-    create: {
-      postId: post.id,
-      tagId: tag.id,
-    },
-  });
+      update: {},
+      create: {
+        postId: post.id,
+        tagId,
+      },
+    });
+  }
 
   // Query table row counts
   const [
@@ -338,6 +364,6 @@ if (process.argv[1] && process.argv[1].endsWith("seed.ts")) {
       process.exit(1);
     })
     .finally(async () => {
-      await prisma.$disconnect();
+      if (defaultPrisma) await defaultPrisma.$disconnect();
     });
 }
