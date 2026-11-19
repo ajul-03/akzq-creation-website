@@ -155,6 +155,18 @@ async function runParitySuite() {
     console.log('\n=== 3. PER-PAGE METADATA PARITY TABLE (TITLE/DESC/CANONICAL/OG/TWITTER) ===');
     console.table(metadataReport);
 
+    console.log('\n=== RAW CANONICAL & OG/TWITTER IMAGE TAGS (SAMPLE: /, /kannur, /thalassery) ===');
+    for (const sampleRoute of ['/', '/kannur', '/thalassery']) {
+      const res = await fetchUrl(sampleRoute);
+      const rawCanon = (res.body.match(/<link rel="canonical"[^>]*>/i) || [])[0] || 'NONE';
+      const rawOg = (res.body.match(/<meta property="og:image"[^>]*>/i) || [])[0] || 'NONE';
+      const rawTwitter = (res.body.match(/<meta name="twitter:image"[^>]*>/i) || [])[0] || 'NONE';
+      console.log(`Route: ${sampleRoute}`);
+      console.log(`  Canonical:     ${rawCanon}`);
+      console.log(`  og:image:      ${rawOg}`);
+      console.log(`  twitter:image: ${rawTwitter}`);
+    }
+
     // 4. Validate All Internal Link Destinations
     console.log('\n=== 4. INTERNAL LINK RESOLUTION CHECK ===');
     const internalLinksReport = [];
@@ -227,9 +239,9 @@ async function runParitySuite() {
         contextMatch: nextFaqJsonLd['@context'] === 'https://schema.org',
         typeMatch: nextFaqJsonLd['@type'] === 'FAQPage',
         nameMatch: allQMatch,
-        phoneMatch: true,
-        geoMatch: true,
-        addressMatch: true,
+        phoneMatch: undefined,
+        geoMatch: undefined,
+        addressMatch: undefined,
         deepEqual: allQMatch && allAMatch,
         questionCountOrig: visibleFaqs.length,
         questionCountNext: nextFaqJsonLd.mainEntity?.length || 0,
