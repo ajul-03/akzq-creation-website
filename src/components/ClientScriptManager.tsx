@@ -142,9 +142,10 @@ export function ClientScriptManager() {
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        // Remove any prior error notification
+        // Remove any prior error notification and field errors
         const oldErr = document.getElementById("formFallbackError");
         if (oldErr) oldErr.remove();
+        form.querySelectorAll(".form-error").forEach((el) => el.remove());
 
         const name = (form.querySelector('[name="name"]') as HTMLInputElement)?.value.trim();
         const email = (form.querySelector('[name="email"]') as HTMLInputElement)?.value.trim();
@@ -215,6 +216,28 @@ export function ClientScriptManager() {
             }
             form.reset();
             return;
+          }
+
+          // Server-side validation field errors (400)
+          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+            try {
+              const data = await response.json();
+              if (data.errors && typeof data.errors === "object") {
+                let hasFieldError = false;
+                for (const [field, messages] of Object.entries(data.errors)) {
+                  const input = form.querySelector(`[name="${field}"]`);
+                  if (input && Array.isArray(messages) && messages.length > 0) {
+                    const span = document.createElement("span");
+                    span.className = "form-error";
+                    span.style.cssText = "color: #e53e3e; font-size: 0.85rem; display: block; margin-top: 4px;";
+                    span.textContent = messages[0] as string;
+                    input.insertAdjacentElement("afterend", span);
+                    hasFieldError = true;
+                  }
+                }
+                if (hasFieldError) return;
+              }
+            } catch {}
           }
 
           // Error handling
