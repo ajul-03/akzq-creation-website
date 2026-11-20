@@ -104,7 +104,7 @@ function isAllowedOrigin(urlStr: string, siteUrl: string): boolean {
     const siteBase = new URL(siteUrl).origin;
     if (originBase === siteBase) return true;
     if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
-      return true;
+      return process.env.NODE_ENV !== "production";
     }
     return false;
   } catch {
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
   // 6. Honeypot check: silently accept without inserting
   if (payload.hp_field && payload.hp_field.trim().length > 0) {
     return NextResponse.json(
-      { ok: true, id: "ack" },
+      { ok: true },
       { status: 201, headers: noStoreHeaders }
     );
   }
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
   // 7. Fast submission check (< 2000ms): silently accept without inserting
   if (typeof payload.elapsedMs === "number" && payload.elapsedMs < 2000) {
     return NextResponse.json(
-      { ok: true, id: "ack" },
+      { ok: true },
       { status: 201, headers: noStoreHeaders }
     );
   }
@@ -334,7 +334,7 @@ export async function POST(request: NextRequest) {
 
     if (existingDuplicate) {
       return NextResponse.json(
-        { ok: true, id: existingDuplicate.id },
+        { ok: true },
         { status: 201, headers: noStoreHeaders }
       );
     }
@@ -408,7 +408,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { ok: true, id: lead.id },
+      { ok: true },
       { status: 201, headers: noStoreHeaders }
     );
   } catch (err: unknown) {
