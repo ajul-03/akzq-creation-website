@@ -18,12 +18,20 @@ export interface LeadNotificationPayload {
 export async function sendLeadNotification(payload: LeadNotificationPayload): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   const notifyEmail = process.env.NOTIFY_EMAIL;
+  const fromEmail = process.env.RESEND_FROM_EMAIL;
 
-  if (!apiKey || !notifyEmail) {
+  // If any required notification configuration is missing, keep notifications disabled
+  if (!apiKey || !notifyEmail || !fromEmail) {
     return;
   }
 
   try {
+    const cleanName = payload.name.replace(/[\x00-\x1F\x7F]/g, " ").trim().slice(0, 80);
+    const cleanService = (payload.serviceInterest || "General Inquiry")
+      .replace(/[\x00-\x1F\x7F]/g, " ")
+      .trim()
+      .slice(0, 80);
+
     const textBody = [
       "New Lead Received on AKZQ.Creation:",
       `- Lead ID: ${payload.leadId}`,
@@ -36,27 +44,31 @@ export async function sendLeadNotification(payload: LeadNotificationPayload): Pr
       `- Message: ${payload.message || "No message provided"}`,
     ].join("\n");
 
-    const response = await fetch("https://api.resend.com/emails", {
+    const baseUrl = process.env.RESEND_BASE_URL || "https://api.resend.com";
+    const endpoint = `${baseUrl.replace(/\/$/, "")}/emails`;
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM_EMAIL || "leads@akzqcreation.com",
+        from: fromEmail,
         to: [notifyEmail],
-        subject: `New Lead: ${payload.name} (${payload.serviceInterest || "General Inquiry"})`,
+        subject: `New Lead: ${cleanName} (${cleanService})`,
         text: textBody,
       }),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Resend API HTTP ${response.status}: ${errText}`);
+      throw new Error(`Resend API HTTP ${response.status}`);
     }
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : "Notification dispatch failed";
-    console.error("sendLeadNotification error:", errorMsg);
+    const statusMatch = err instanceof Error ? err.message.match(/HTTP \d+/) : null;
+    const statusInfo = statusMatch ? statusMatch[0] : "network/timeout error";
+    console.error(`sendLeadNotification error: ${statusInfo}`);
 
     try {
       await db.activityLog.create({
