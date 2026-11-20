@@ -11,7 +11,12 @@ function createClient(): PrismaClient {
   if (!connectionString) {
     throw new Error("DATABASE_URL environment variable is missing.");
   }
-  const adapter = new PrismaPg({ connectionString });
+  const adapter = new PrismaPg({
+    connectionString,
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 5000,
+    query_timeout: 5000,
+  });
   return new PrismaClient({
     adapter,
     log:
