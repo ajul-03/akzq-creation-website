@@ -11,9 +11,13 @@ export function ContactForm() {
   const [fallbackError, setFallbackError] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [renderTime, setRenderTime] = useState<number>(Date.now());
+  const [referrerOnMount, setReferrerOnMount] = useState<string | null>(null);
 
   useEffect(() => {
     setRenderTime(Date.now());
+    if (typeof document !== "undefined") {
+      setReferrerOnMount(document.referrer || null);
+    }
   }, []);
 
   const estimates: Record<string, string> = {
@@ -51,7 +55,7 @@ export function ContactForm() {
     const utmSource = urlParams?.get("utm_source") || null;
     const utmMedium = urlParams?.get("utm_medium") || null;
     const utmCampaign = urlParams?.get("utm_campaign") || null;
-    const referrer = typeof document !== "undefined" ? document.referrer || null : null;
+    const referrer = referrerOnMount;
 
     setSubmitting(true);
 
@@ -99,9 +103,17 @@ export function ContactForm() {
         setSubmitting(false);
         const data = await response.json();
         if (data.errors) {
+          const clientFieldMessages: Record<string, string> = {
+            name: "Please fill in your Name.",
+            email: "Please fill in your Email.",
+            phone: "Please fill in your Phone / WhatsApp.",
+            service: "Please select the Required Service.",
+            company: "Please enter your Company / Business Name.",
+            message: "Please enter your Project Details.",
+          };
           const flat: Record<string, string> = {};
-          for (const [k, v] of Object.entries(data.errors)) {
-            if (Array.isArray(v) && v.length > 0) flat[k] = v[0] as string;
+          for (const k of Object.keys(data.errors)) {
+            flat[k] = clientFieldMessages[k] || "Please fill in this required field.";
           }
           setFieldErrors(flat);
         } else if (data.error) {

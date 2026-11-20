@@ -137,6 +137,7 @@ export function ClientScriptManager() {
     const successModal = document.getElementById("formSuccessModal");
     const closeSuccessBtn = document.getElementById("closeSuccessModal");
     const formRenderTime = Date.now();
+    const initialReferrer = typeof document !== "undefined" ? document.referrer || null : null;
 
     if (form) {
       form.addEventListener("submit", async (e) => {
@@ -163,7 +164,7 @@ export function ClientScriptManager() {
         const utmSource = urlParams.get("utm_source") || null;
         const utmMedium = urlParams.get("utm_medium") || null;
         const utmCampaign = urlParams.get("utm_campaign") || null;
-        const referrer = document.referrer || null;
+        const referrer = initialReferrer;
 
         const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
         const origText = submitBtn ? submitBtn.innerHTML : "";
@@ -223,14 +224,24 @@ export function ClientScriptManager() {
             try {
               const data = await response.json();
               if (data.errors && typeof data.errors === "object") {
+                const clientFieldMessages: Record<string, string> = {
+                  name: "Please fill in your Name.",
+                  email: "Please fill in your Email.",
+                  phone: "Please fill in your Phone / WhatsApp.",
+                  service: "Please select the Required Service.",
+                  company: "Please enter your Company / Business Name.",
+                  message: "Please enter your Project Details.",
+                };
                 let hasFieldError = false;
                 for (const [field, messages] of Object.entries(data.errors)) {
-                  const input = form.querySelector(`[name="${field}"]`);
+                  const input =
+                    form.querySelector(`[name="${field}"]`) ||
+                    (field === "message" ? form.querySelector('[name="details"]') : null);
                   if (input && Array.isArray(messages) && messages.length > 0) {
                     const span = document.createElement("span");
                     span.className = "form-error";
                     span.style.cssText = "color: #e53e3e; font-size: 0.85rem; display: block; margin-top: 4px;";
-                    span.textContent = messages[0] as string;
+                    span.textContent = clientFieldMessages[field] || "Please fill in this required field.";
                     input.insertAdjacentElement("afterend", span);
                     hasFieldError = true;
                   }
