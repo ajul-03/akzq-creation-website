@@ -249,6 +249,18 @@ async function runParitySuite() {
     }
     console.table(jsonLdReport);
 
+    console.log('\n=== RAW CANONICAL & SOCIAL IMAGE TAGS (SAMPLE: /, /kannur, /thalassery) ===');
+    for (const sampleRoute of ['/', '/kannur', '/thalassery']) {
+      const res = await fetchUrl(sampleRoute);
+      const canonicalMatch = res.body.match(/<link[^>]+rel=["']canonical["'][^>]*>/i);
+      const ogImageMatch = res.body.match(/<meta[^>]+property=["']og:image["'][^>]*>/i);
+      const twitterImageMatch = res.body.match(/<meta[^>]+name=["']twitter:image["'][^>]*>/i);
+      console.log(`\nRoute: ${sampleRoute}`);
+      console.log(`  canonical:     ${canonicalMatch ? canonicalMatch[0] : 'NOT FOUND'}`);
+      console.log(`  og:image:      ${ogImageMatch ? ogImageMatch[0] : 'NOT FOUND'}`);
+      console.log(`  twitter:image: ${twitterImageMatch ? twitterImageMatch[0] : 'NOT FOUND'}`);
+    }
+
     console.log('\nParity suite completed successfully.');
   } finally {
     if (server.pid) {
