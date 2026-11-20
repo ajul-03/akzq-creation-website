@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [ feat/lead-capture ]
+  pull_request:
+    branches: [ feat/lead-capture ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium & system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify import and asset casing
+        run: node scripts/check-import-casing.mjs
+
+      - name: Build Next.js application (no DB env)
+        run: npm run build
+        env:
+          DATABASE_URL: ""
+          DIRECT_URL: ""
+
+      - name: Run text parity diff suite
+        run: node tests/text-parity-diff.mjs
+
+      - name: Run location isolation suite
+        run: node tests/location-isolation.test.mjs
+
+      - name: Run NAP integrity suite
+        run: node tests/nap-integrity.test.mjs
+
+      - name: Run CSP inspection suite
+        run: node tests/check-csp.mjs
+
+      - name: Run HTTP parity suite
+        run: node tests/parity-test.mjs
+
+      - name: Run privacy IP hashing suite
+        run: npx tsx tests/privacy.test.ts
+
+      - name: Run database & drift test suite
+        run: npx tsx tests/db.test.ts
+
+      - name: Run production-server leads API suite
+        run: npx tsx tests/leads-api.test.ts
+
+      - name: Run headless browser contact form test suite
+        run: node tests/contact-form-browser.test.mjs

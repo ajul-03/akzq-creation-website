@@ -9,9 +9,13 @@ const tracked = new Set(
     .map((p) => p.trim().replace(/\r$/, ""))
 );
 
-let checked = 0;
+let checkedImports = 0;
+let checkedAssets = 0;
 let errors = 0;
 
+console.log("=== CHECKING IMPORT & ASSET CASING AGAINST GIT LS-FILES ===\n");
+
+console.log("--- 1. Relative and Aliased Imports ---");
 for (const file of tracked) {
   if (
     !file.endsWith(".ts") &&
@@ -49,16 +53,58 @@ for (const file of tracked) {
       ];
       const found = candidates.find((c) => tracked.has(c));
       if (found) {
-        checked++;
+        checkedImports++;
+        console.log(`[OK IMPORT] ${file} -> "${imp}" resolved to: ${found}`);
       } else {
-        console.error(`Case or path mismatch in ${file}: "${imp}" -> "${resolved}" not found in git ls-files`);
+        console.error(`[FAIL IMPORT] Case or path mismatch in ${file}: "${imp}" -> "${resolved}" not found in git ls-files`);
         errors++;
       }
     }
   }
 }
 
-console.log(`\nImport casing check complete: ${checked} relative/alias imports checked against git ls-files. Mismatches: ${errors}.`);
+console.log("\n--- 2. Static Asset References (/assets/...) ---");
+const assetRegex = /(?:src=["']|href=["']|url\(["']?|["'])(\/?assets\/[a-zA-Z0-9_\-\./]+)/g;
+
+for (const file of tracked) {
+  if (
+    !file.endsWith(".ts") &&
+    !file.endsWith(".tsx") &&
+    !file.endsWith(".js") &&
+    !file.endsWith(".mjs") &&
+    !file.endsWith(".html") &&
+    !file.endsWith(".css")
+  ) {
+    continue;
+  }
+
+  const content = fs.readFileSync(file, "utf8");
+  let match;
+
+  while ((match = assetRegex.exec(content)) !== null) {
+    let rawAsset = match[1].replace(/["')]/g, "");
+    if (rawAsset.startsWith("/")) rawAsset = rawAsset.slice(1);
+
+    // Skip generic directory references
+    if (rawAsset.endsWith("/")) continue;
+
+    // Assets in public/assets/...
+    const candidatePath = "public/" + rawAsset;
+    if (tracked.has(candidatePath)) {
+      checkedAssets++;
+      console.log(`[OK ASSET]  ${file} -> "${match[1]}" resolved to: ${candidatePath}`);
+    } else {
+      console.error(`[FAIL ASSET] Asset casing or path mismatch in ${file}: "${match[1]}" -> "${candidatePath}" not found in git ls-files`);
+      errors++;
+    }
+  }
+}
+
+console.log(`\nImport & Asset casing check complete:`);
+console.log(`- ${checkedImports} code imports verified`);
+console.log(`- ${checkedAssets} asset references verified`);
+console.log(`- Total Mismatches: ${errors}`);
+
 if (errors > 0) {
   process.exit(1);
 }

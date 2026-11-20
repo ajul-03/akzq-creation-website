@@ -18,6 +18,7 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 | `RESEND_API_KEY` | Optional | API key for Resend email notifications (default: disabled if unset) | `re_123456789...` |
 | `NOTIFY_EMAIL` | Optional | Recipient email address for new lead notifications | `you@example.com` |
 | `RESEND_FROM_EMAIL`| Optional | Verified sending email address on Resend (if unset, notifications stay disabled) | `leads@example.com` |
+| `RESEND_BASE_URL` | Optional | Custom base URL for Resend API (default: https://api.resend.com, useful for mock servers or proxying) | `https://api.resend.com` |
 
 > [!IMPORTANT]
 > - **Build Decoupling**: The build process (`next build`) is completely decoupled from database availability. `DATABASE_URL` does NOT need to be accessible during CI/CD build steps. All 15 marketing and service pages are statically prerendered (`○`), and `/api/leads` is compiled as an on-demand server-rendered route (`ƒ`).
@@ -128,3 +129,10 @@ In `package.json`:
 }
 ```
 This override resolves security vulnerability **GHSA-7589-6fvf-x4pw** in the `effect` package, which is pulled in transitively by `@prisma/client`. Once Prisma releases an upstream version of `@prisma/client` that depends on `effect >= 3.22.5`, this override can and should be safely removed.
+
+---
+
+## 5. Dependency Justifications
+
+- **`zod`**: Zod is used exclusively for runtime schema validation and sanitization of incoming lead capture payloads, ensuring strict type safety and control character rejection before database persistence.
+- **`dotenv`**: Loaded in `prisma.config.ts` to read `.env` credentials when running Prisma CLI commands (e.g. `prisma migrate status`) in standalone shells without external environment exports.
