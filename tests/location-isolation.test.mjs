@@ -23,7 +23,10 @@ function waitForServer(port, timeout = 30000) {
 
 async function runIsolationTest() {
   console.log('Starting Next.js production server on port 3000...');
-  const server = spawn('cmd.exe', ['/c', 'npx next start -H 127.0.0.1 -p 3000'], { stdio: 'inherit' });
+  const server = spawn('npx', ['next', 'start', '-H', '127.0.0.1', '-p', '3000'], {
+    shell: true,
+    stdio: 'inherit',
+  });
 
   let browser;
   const detailedAudit = [];
@@ -119,11 +122,15 @@ async function runIsolationTest() {
     }
   } finally {
     if (browser) await browser.close();
-    if (server.pid) {
+    if (server && server.pid) {
       try {
-        spawn('cmd.exe', ['/c', `taskkill /pid ${server.pid} /f /t`], { stdio: 'ignore' });
+        if (process.platform === 'win32') {
+          spawn('cmd.exe', ['/c', `taskkill /pid ${server.pid} /f /t`], { stdio: 'ignore' });
+        } else {
+          server.kill('SIGKILL');
+        }
       } catch (e) {
-        server.kill('SIGTERM');
+        try { server.kill('SIGTERM'); } catch {}
       }
     }
   }

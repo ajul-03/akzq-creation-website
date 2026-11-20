@@ -25,8 +25,20 @@ const MOCK_RESEND_PORT = 54335;
 function killProcessTree(child?: ChildProcess | null) {
   if (!child || !child.pid) return;
   try {
-    execSync(`taskkill /pid ${child.pid} /f /t`, { stdio: "ignore" });
+    if (process.platform === "win32") {
+      execSync(`taskkill /pid ${child.pid} /f /t`, { stdio: "ignore" });
+    } else {
+      child.kill("SIGKILL");
+    }
   } catch {}
+}
+
+function spawnNextServer(port: number, env: Record<string, string | undefined>) {
+  return spawn("npx", ["next", "start", "-p", String(port)], {
+    shell: true,
+    env,
+    stdio: "ignore",
+  });
 }
 
 async function waitForServer(port: number, timeoutMs = 15000): Promise<boolean> {
@@ -135,17 +147,16 @@ async function runSuite() {
     console.log(`Server command: npx next start -p ${PROD_PORT}`);
     console.log(`Target port: ${PROD_PORT}`);
 
-    prodServer = spawn("cmd.exe", ["/c", `npx next start -p ${PROD_PORT}`], {
-      env: {
-        ...process.env,
-        PORT: String(PROD_PORT),
-        NODE_ENV: "production",
-        DATABASE_URL: TEST_DB_URL,
-        DIRECT_URL: TEST_DB_URL,
-        IP_HASH_SECRET: TEST_SECRET,
-        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-        ALLOWED_ORIGINS: "https://preview.akzqcreation.com",
-        RESEND_API_KEY: "re_mock_test_key_placeholder",
+    prodServer = spawnNextServer(PROD_PORT, {
+      ...process.env,
+      PORT: String(PROD_PORT),
+      NODE_ENV: "production",
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: TEST_SECRET,
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      ALLOWED_ORIGINS: "https://preview.akzqcreation.com",
+      RESEND_API_KEY: "re_mock_test_key_placeholder",
         NOTIFY_EMAIL: "notifications@akzqcreation.com",
         RESEND_FROM_EMAIL: "leads@akzqcreation.com",
         RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
@@ -822,23 +833,20 @@ async function runSuite() {
     mockResendShouldFail = false;
 
     const noResendPort = 3014;
-    const noResendServer = spawn("cmd.exe", ["/c", `npx next start -p ${noResendPort}`], {
-      env: {
-        ...process.env,
-        PORT: String(noResendPort),
-        NODE_ENV: "production",
-        DATABASE_URL: TEST_DB_URL,
-        DIRECT_URL: TEST_DB_URL,
-        IP_HASH_SECRET: TEST_SECRET,
-        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-        ALLOWED_ORIGINS: `http://127.0.0.1:${noResendPort}`,
-        // RESEND_API_KEY deliberately unset!
-        RESEND_API_KEY: "",
-        NOTIFY_EMAIL: "",
-        RESEND_FROM_EMAIL: "",
-        RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
-      },
-      stdio: "ignore",
+    const noResendServer = spawnNextServer(noResendPort, {
+      ...process.env,
+      PORT: String(noResendPort),
+      NODE_ENV: "production",
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: TEST_SECRET,
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      ALLOWED_ORIGINS: `http://127.0.0.1:${noResendPort}`,
+      // RESEND_API_KEY deliberately unset!
+      RESEND_API_KEY: "",
+      NOTIFY_EMAIL: "",
+      RESEND_FROM_EMAIL: "",
+      RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
     });
 
     const isNoResendReady = await waitForServer(noResendPort);
@@ -887,18 +895,15 @@ async function runSuite() {
   } catch { return false; }
 }`);
 
-    devServer = spawn("cmd.exe", ["/c", `npx next start -p ${DEV_PORT}`], {
-      env: {
-        ...process.env,
-        PORT: String(DEV_PORT),
-        NODE_ENV: "production",
-        ALLOWED_ORIGINS: `http://localhost:${DEV_PORT}`,
-        DATABASE_URL: TEST_DB_URL,
-        DIRECT_URL: TEST_DB_URL,
-        IP_HASH_SECRET: TEST_SECRET,
-        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-      },
-      stdio: "ignore",
+    devServer = spawnNextServer(DEV_PORT, {
+      ...process.env,
+      PORT: String(DEV_PORT),
+      NODE_ENV: "production",
+      ALLOWED_ORIGINS: `http://localhost:${DEV_PORT}`,
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: TEST_SECRET,
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
     });
 
     const isDevReady = await waitForServer(DEV_PORT);
@@ -936,16 +941,13 @@ async function runSuite() {
     // (a) Empty secret -> 503
     console.log("\n[Subcase 1: Empty Secret ('')]");
     const portEmpty = 3010;
-    const serverEmpty = spawn("cmd.exe", ["/c", `npx next start -p ${portEmpty}`], {
-      env: {
-        ...process.env,
-        PORT: String(portEmpty),
-        DATABASE_URL: TEST_DB_URL,
-        DIRECT_URL: TEST_DB_URL,
-        IP_HASH_SECRET: "",
-        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-      },
-      stdio: "ignore",
+    const serverEmpty = spawnNextServer(portEmpty, {
+      ...process.env,
+      PORT: String(portEmpty),
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: "",
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
     });
     assert.ok(await waitForServer(portEmpty), "Server with empty secret failed to start");
     const resEmpty = await requestApi({
@@ -959,16 +961,13 @@ async function runSuite() {
     // (b) 31 chars -> 503
     console.log("\n[Subcase 2: 31 Character Secret]");
     const port31 = 3011;
-    const server31 = spawn("cmd.exe", ["/c", `npx next start -p ${port31}`], {
-      env: {
-        ...process.env,
-        PORT: String(port31),
-        DATABASE_URL: TEST_DB_URL,
-        DIRECT_URL: TEST_DB_URL,
-        IP_HASH_SECRET: "1234567890123456789012345678901", // 31 chars
-        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-      },
-      stdio: "ignore",
+    const server31 = spawnNextServer(port31, {
+      ...process.env,
+      PORT: String(port31),
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: "1234567890123456789012345678901", // 31 chars
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
     });
     assert.ok(await waitForServer(port31), "Server with 31-char secret failed to start");
     const res31 = await requestApi({
@@ -982,16 +981,13 @@ async function runSuite() {
     // (c) Placeholder secret beginning with 'replace-with' -> 503
     console.log("\n[Subcase 3: Placeholder Secret starting with 'replace-with']");
     const portPlaceholder = 3012;
-    const serverPlaceholder = spawn("cmd.exe", ["/c", `npx next start -p ${portPlaceholder}`], {
-      env: {
-        ...process.env,
-        PORT: String(portPlaceholder),
-        DATABASE_URL: TEST_DB_URL,
-        DIRECT_URL: TEST_DB_URL,
-        IP_HASH_SECRET: "replace-with-a-real-secret-at-least-32-chars",
-        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-      },
-      stdio: "ignore",
+    const serverPlaceholder = spawnNextServer(portPlaceholder, {
+      ...process.env,
+      PORT: String(portPlaceholder),
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: "replace-with-a-real-secret-at-least-32-chars",
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
     });
     assert.ok(await waitForServer(portPlaceholder), "Server with placeholder secret failed to start");
     const resPlaceholder = await requestApi({
@@ -1019,15 +1015,14 @@ async function runSuite() {
     await new Promise<void>((resolve) => tcpServer.listen(HANG_TCP_PORT, resolve));
     console.log(`TCP hang server listening on port ${HANG_TCP_PORT}`);
 
-    timeoutServer = spawn("cmd.exe", ["/c", `npx next start -p ${TIMEOUT_PORT}`], {
-      env: {
-        ...process.env,
-        PORT: String(TIMEOUT_PORT),
-        NODE_ENV: "production",
-        DATABASE_URL: `postgresql://postgres:password@127.0.0.1:${HANG_TCP_PORT}/hang_db`,
-        DIRECT_URL: `postgresql://postgres:password@127.0.0.1:${HANG_TCP_PORT}/hang_db`,
-        IP_HASH_SECRET: TEST_SECRET,
-        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+    timeoutServer = spawnNextServer(TIMEOUT_PORT, {
+      ...process.env,
+      PORT: String(TIMEOUT_PORT),
+      NODE_ENV: "production",
+      DATABASE_URL: `postgresql://postgres:password@127.0.0.1:${HANG_TCP_PORT}/hang_db`,
+      DIRECT_URL: `postgresql://postgres:password@127.0.0.1:${HANG_TCP_PORT}/hang_db`,
+      IP_HASH_SECRET: TEST_SECRET,
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
       },
       stdio: "ignore",
     });

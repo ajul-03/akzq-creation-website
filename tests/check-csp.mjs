@@ -21,7 +21,7 @@ const pages = [
 ];
 
 console.log('Starting Next.js server for CSP and console inspection...');
-const server = spawn('cmd.exe', ['/c', 'npx next start -p 3000'], { stdio: 'ignore' });
+const server = spawn('npx', ['next', 'start', '-p', '3000'], { shell: true, stdio: 'ignore' });
 
 setTimeout(async () => {
   let browser;

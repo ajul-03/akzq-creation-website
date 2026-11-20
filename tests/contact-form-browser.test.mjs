@@ -87,7 +87,8 @@ async function runBrowserTest() {
 
   // 2. Spawn Next.js Production Server
   console.log("--- 2. Starting Next.js Server on port " + BROWSER_PORT + " ---");
-  const server = spawn("cmd.exe", ["/c", `npx next start -p ${BROWSER_PORT}`], {
+  const server = spawn("npx", ["next", "start", "-p", String(BROWSER_PORT)], {
+    shell: true,
     env: {
       ...process.env,
       PORT: String(BROWSER_PORT),
