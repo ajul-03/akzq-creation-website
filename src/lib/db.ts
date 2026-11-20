@@ -28,10 +28,6 @@ export function getDb(): PrismaClient {
   return globalForPrisma.prismaInstance;
 }
 
-export function resetDb(): void {
-  globalForPrisma.prismaInstance = undefined;
-}
-
 export const db = new Proxy({} as PrismaClient, {
   get(_target, prop) {
     const client = getDb();
