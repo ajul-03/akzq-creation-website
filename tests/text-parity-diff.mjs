@@ -92,7 +92,6 @@ console.log('=== REGION-BY-REGION TEXT PARITY AUDIT (HEADER, MAIN, FOOTER) ===\n
 const tableData = [];
 let allMainZero = true;
 let markdown = `# Text Parity Region-by-Region Diff Report (Header, Main, Footer)\n\n`;
-markdown += `Generated on: ${new Date().toISOString()}\n\n`;
 markdown += `Comparing legacy static HTML against Next.js rendered HTML across three separate structural regions:\n`;
 markdown += `- **Header:** site navigation, brand mark, utility links\n`;
 markdown += `- **Main:** core page sections, case studies, form fields, and FAQ accordions\n`;

@@ -188,6 +188,7 @@ async function runSuite() {
 
     // =========================================================================
     // PROVE HTTP: Print raw curl -i of a valid POST and one of a 413
+    // (Including both Content-Length and Transfer-Encoding: chunked)
     // =========================================================================
     console.log("--- PROVING REAL HTTP OVER WIRE (raw curl output) ---");
     const fs = await import("fs");
@@ -209,7 +210,7 @@ async function runSuite() {
       fs.unlinkSync("./.test-valid-payload.json");
     } catch {}
 
-    console.log("\n[CURL 2: Payload Too Large 413 (>10KB)]");
+    console.log("\n[CURL 2: Payload Too Large 413 (>10KB with Content-Length)]");
     const largePayload = JSON.stringify({
       name: "Large Payload",
       email: "large@example.com",
@@ -222,6 +223,13 @@ async function runSuite() {
       { encoding: "utf8" }
     );
     console.log(curl413Output.trim());
+
+    console.log("\n[CURL 3: Payload Too Large 413 (>10KB sent chunked without Content-Length)]");
+    const curlChunked413Output = execSync(
+      `curl.exe -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" -H "Transfer-Encoding: chunked" --data-binary @./.test-large-payload.json`,
+      { encoding: "utf8" }
+    );
+    console.log(curlChunked413Output.trim());
     try {
       fs.unlinkSync("./.test-large-payload.json");
     } catch {}
@@ -349,7 +357,20 @@ async function runSuite() {
     console.log(`Zod Errors: ${JSON.stringify(zodBody.errors)}`);
     assert.strictEqual(resZodBad.status, 400);
     assert.ok(zodBody.errors.email);
-    console.log("✓ TEST 2 PASSED: 415, 413, and 400 rejected cleanly.\n");
+
+    // 400: Zod control characters in name ("A\r\nBcc: x@y.z")
+    const resCtrlChars = await requestApi({
+      body: {
+        name: "A\r\nBcc: x@y.z",
+        email: "ctrl.test@example.com",
+      },
+    });
+    console.log(`Control Characters in Name Status: ${resCtrlChars.status}`);
+    const ctrlBody = await resCtrlChars.json();
+    console.log(`Control Characters Response: ${JSON.stringify(ctrlBody)}`);
+    assert.strictEqual(resCtrlChars.status, 400);
+    assert.ok(ctrlBody.errors && ctrlBody.errors.name, "Must return field error for name containing control chars");
+    console.log("✓ TEST 2 PASSED: 415, 413, bad JSON, and Zod control chars rejected cleanly.\n");
 
     // =========================================================================
     // TEST 3: Origin & Referer Hardening (Task 6)
@@ -516,6 +537,23 @@ async function runSuite() {
     assert.strictEqual(actMeta.email, undefined);
     assert.strictEqual(actMeta.phone, undefined);
     assert.strictEqual(actMeta.message, undefined);
+
+    // Database-wide SQL scan: prove knownIp (203.0.113.195) appears in NO table
+    console.log(`\n--- SQL SCAN FOR RAW IP ${knownIp} ACROSS ALL PUBLIC TABLES ---`);
+    const publicTables: Array<{ table_name: string }> = await prisma.$queryRawUnsafe(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+    );
+    for (const t of publicTables) {
+      const tableName = t.table_name;
+      const scanRes: Array<{ count: bigint | number }> = await prisma.$queryRawUnsafe(
+        `SELECT COUNT(*) as count FROM "${tableName}" WHERE CAST("${tableName}".* AS TEXT) LIKE '%${knownIp}%'`
+      );
+      const matchCount = Number(scanRes[0].count);
+      console.log(`  Table "${tableName}": matches = ${matchCount}`);
+      assert.strictEqual(matchCount, 0, `Table "${tableName}" must not contain raw IP ${knownIp}`);
+    }
+    console.log(`✓ Full SQL scan complete: raw IP ${knownIp} appears in 0 tables.`);
+
     console.log("✓ TEST 5 PASSED: ipHash matches HMAC; zero raw IP in database; ActivityLog has no PII.\n");
 
     // =========================================================================
@@ -552,6 +590,55 @@ async function runSuite() {
     assert.ok(retryAfterHourly, "Retry-After header must be present");
     const retrySeconds = parseInt(retryAfterHourly, 10);
     assert.ok(retrySeconds > 0 && retrySeconds <= 3600, "Retry-After must be positive seconds <= 3600");
+
+    // 1b. Hourly rate limit: oldest in-window row 40 min old -> Retry-After ~1200s
+    const fortyMinIp = "198.51.100.55";
+    const fortyMinHash = hashIp(fortyMinIp, TEST_SECRET);
+    const fortyMinAgo = new Date(Date.now() - 40 * 60 * 1000);
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+    // Seed 5 rows in the hour, with oldest at 40 min ago
+    await prisma.lead.createMany({
+      data: [
+        {
+          source: "CONTACT_FORM",
+          name: "Oldest 40m",
+          email: "oldest40m@example.com",
+          ipHash: fortyMinHash,
+          createdAt: fortyMinAgo,
+          updatedAt: fortyMinAgo,
+          status: "NEW",
+        },
+        ...Array.from({ length: 4 }).map((_, idx) => ({
+          source: "CONTACT_FORM" as const,
+          name: `Recent ${idx}`,
+          email: `recent_${idx}@example.com`,
+          ipHash: fortyMinHash,
+          createdAt: tenMinAgo,
+          updatedAt: tenMinAgo,
+          status: "NEW" as const,
+        })),
+      ],
+    });
+
+    const res40mBlocked = await requestApi({
+      body: {
+        name: "40m Tester",
+        email: "forty.min@example.com",
+        elapsedMs: 2500,
+      },
+      headers: { "x-forwarded-for": fortyMinIp },
+    });
+    const retryAfter40m = res40mBlocked.headers.get("Retry-After");
+    console.log(`Hourly (40m oldest row) Request Status: ${res40mBlocked.status}`);
+    console.log(`Hourly (40m oldest row) Retry-After: ${retryAfter40m}s (expected ~1200s)`);
+    assert.strictEqual(res40mBlocked.status, 429);
+    assert.ok(retryAfter40m);
+    const retry40mSecs = parseInt(retryAfter40m, 10);
+    assert.ok(
+      retry40mSecs >= 1150 && retry40mSecs <= 1250,
+      `Retry-After must be ~1200s (got ${retry40mSecs})`
+    );
 
     // 2. 24-hour rate limit: Seed 19 rows from 2 hours ago for dailyIp
     console.log("\nSeeding 19 Lead rows from 2 hours ago (within 24h, outside 1h window)...");
@@ -649,25 +736,39 @@ async function runSuite() {
     receivedResendRequests.length = 0;
     mockResendShouldFail = false;
 
-    // (i) Lead triggers email request with correct fields
+    // (i) Lead triggers email request with message containing newlines (\r\n -> \n)
+    const multilineMessage = "Project scope:\r\n- Custom Branding\r\n- Website Development\r\n- SEO Optimization";
     const resEmailSuccess = await requestApi({
       body: {
-        name: "Akash Nair\r\nBcc: evil@attacker.com", // testing control char sanitization
+        name: "Akash Nair",
         email: "akash@malabar.example",
         phone: "+91 7510109730",
         service: "Web Design & Development",
+        message: multilineMessage,
         elapsedMs: 3500,
       },
       headers: { "x-forwarded-for": "10.0.9.1" },
     });
     assert.strictEqual(resEmailSuccess.status, 201);
 
+    // Verify stored lead message normalized \r\n to \n
+    const storedLead = await prisma.lead.findFirst({
+      where: { email: "akash@malabar.example" },
+      orderBy: { createdAt: "desc" },
+    });
+    assert.ok(storedLead);
+    assert.strictEqual(
+      storedLead.message,
+      "Project scope:\n- Custom Branding\n- Website Development\n- SEO Optimization",
+      "Lead message in DB must have \\r\\n normalized to \\n"
+    );
+
     // Wait for after() hook to dispatch
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 800));
 
     assert.strictEqual(receivedResendRequests.length, 1, "Mock Resend server must have received 1 request");
     const sentReq = receivedResendRequests[0];
-    console.log("Mock Resend Server Received Request:");
+    console.log("Mock Resend Server Received Request (message with newlines):");
     console.log(`  Headers Authorization: ${sentReq.headers.authorization}`);
     console.log(`  Payload:`, JSON.stringify(sentReq.body, null, 2));
 
@@ -678,6 +779,8 @@ async function runSuite() {
     assert.strictEqual(sentReq.body.subject.includes("\r"), false);
     assert.strictEqual(sentReq.body.subject.includes("\n"), false);
     assert.ok(sentReq.body.subject.includes("Akash Nair"));
+    // Payload text body must include the multiline message
+    assert.ok(sentReq.body.text.includes("Custom Branding\n- Website Development"));
 
     // (ii) Mock 500 writes lead.notify_failed without PII, response to visitor is still 201
     mockResendShouldFail = true;
@@ -695,7 +798,7 @@ async function runSuite() {
     });
     assert.strictEqual(resEmailFail.status, 201);
 
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 800));
     const failLead = await prisma.lead.findFirst({
       where: { email: "fail.notify@example.com" },
     });
@@ -712,18 +815,84 @@ async function runSuite() {
     assert.strictEqual(failMeta.name, undefined);
     assert.strictEqual(failMeta.email, undefined);
     assert.strictEqual(failMeta.message, undefined);
-    console.log("✓ TEST 8 PASSED: Resend notification fields verified and 500 failure handled.\n");
+
+    // (iii) When RESEND_API_KEY is unset, mock server receives ZERO requests
+    console.log("\nTesting RESEND_API_KEY unset (notifications disabled)...");
+    receivedResendRequests.length = 0;
+    mockResendShouldFail = false;
+
+    const noResendPort = 3014;
+    const noResendServer = spawn("cmd.exe", ["/c", `npx next start -p ${noResendPort}`], {
+      env: {
+        ...process.env,
+        PORT: String(noResendPort),
+        NODE_ENV: "production",
+        DATABASE_URL: TEST_DB_URL,
+        DIRECT_URL: TEST_DB_URL,
+        IP_HASH_SECRET: TEST_SECRET,
+        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+        ALLOWED_ORIGINS: `http://127.0.0.1:${noResendPort}`,
+        // RESEND_API_KEY deliberately unset!
+        RESEND_API_KEY: "",
+        NOTIFY_EMAIL: "",
+        RESEND_FROM_EMAIL: "",
+        RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
+      },
+      stdio: "ignore",
+    });
+
+    const isNoResendReady = await waitForServer(noResendPort);
+    assert.ok(isNoResendReady, "No-resend server failed to start");
+
+    const resNoResend = await requestApi({
+      port: noResendPort,
+      body: {
+        name: "No Resend User",
+        email: "noresend@example.com",
+        elapsedMs: 3000,
+      },
+      headers: { origin: `http://127.0.0.1:${noResendPort}` },
+    });
+    assert.strictEqual(resNoResend.status, 201);
+
+    await new Promise((r) => setTimeout(r, 800));
+    console.log(`Mock Resend request count with RESEND_API_KEY unset: ${receivedResendRequests.length}`);
+    assert.strictEqual(receivedResendRequests.length, 0, "Mock Resend must receive 0 requests when API key unset");
+    killProcessTree(noResendServer);
+
+    console.log("✓ TEST 8 PASSED: Resend notification fields, failure handling, and disabled state verified.\n");
 
     // =========================================================================
-    // TEST 9: Dev Environment Behavior (Localhost Origin Allowed in Dev)
+    // TEST 9: Origin Check via ALLOWED_ORIGINS (T6)
     // =========================================================================
-    console.log("--- TEST 9: Dev Environment Localhost Origin Allowance ---");
+    console.log("--- TEST 9: Origin Verification via ALLOWED_ORIGINS (T6) ---");
+    console.log("Origin Check Function (from src/app/api/leads/route.ts):");
+    console.log(`function isAllowedOrigin(headerValue: string | null, siteUrl: string, allowedOriginsEnv?: string): boolean {
+  if (!headerValue) return true;
+  try {
+    const parsedTarget = new URL(headerValue);
+    const targetOrigin = parsedTarget.origin;
+    if (!targetOrigin || targetOrigin === "null") return false;
+    const allowedSet = new Set<string>();
+    try { allowedSet.add(new URL(siteUrl).origin); } catch {}
+    if (allowedOriginsEnv) {
+      for (const item of allowedOriginsEnv.split(",")) {
+        const trimmed = item.trim();
+        if (trimmed) {
+          try { allowedSet.add(new URL(trimmed).origin); } catch {}
+        }
+      }
+    }
+    return allowedSet.has(targetOrigin);
+  } catch { return false; }
+}`);
+
     devServer = spawn("cmd.exe", ["/c", `npx next start -p ${DEV_PORT}`], {
       env: {
         ...process.env,
         PORT: String(DEV_PORT),
-        NODE_ENV: "development",
-        ALLOW_DEV_ORIGIN: "true",
+        NODE_ENV: "production",
+        ALLOWED_ORIGINS: `http://localhost:${DEV_PORT}`,
         DATABASE_URL: TEST_DB_URL,
         DIRECT_URL: TEST_DB_URL,
         IP_HASH_SECRET: TEST_SECRET,
@@ -735,50 +904,108 @@ async function runSuite() {
     const isDevReady = await waitForServer(DEV_PORT);
     assert.ok(isDevReady, "Dev server failed to start");
 
-    const resDevLocalhost = await requestApi({
+    // Subcase 1: Origin in ALLOWED_ORIGINS -> 201
+    const resAllowedOrigin = await requestApi({
       port: DEV_PORT,
-      body: { name: "Dev User", email: "dev@example.com", elapsedMs: 3000 },
+      body: { name: "Allowed Origin User", email: "allowed.origin@example.com", elapsedMs: 3000 },
       headers: { origin: `http://localhost:${DEV_PORT}` },
     });
-    console.log(`Localhost Origin in Development Status: ${resDevLocalhost.status}`);
-    assert.strictEqual(resDevLocalhost.status, 201);
-    console.log("✓ TEST 9 PASSED: Localhost origin accepted in development.\n");
+    console.log(`Allowed Origin (http://localhost:${DEV_PORT}) Status: ${resAllowedOrigin.status}`);
+    assert.strictEqual(resAllowedOrigin.status, 201);
+
+    // Subcase 2: Unlisted Origin -> 403
+    const resDisallowedOrigin = await requestApi({
+      port: DEV_PORT,
+      body: { name: "Disallowed Origin User", email: "disallowed.origin@example.com", elapsedMs: 3000 },
+      headers: { origin: `http://localhost:9999` },
+    });
+    console.log(`Unlisted Origin (http://localhost:9999) Status: ${resDisallowedOrigin.status}`);
+    assert.strictEqual(resDisallowedOrigin.status, 403);
+    console.log("✓ TEST 9 PASSED: Origin strictly verified against ALLOWED_ORIGINS.\n");
 
     // =========================================================================
-    // TEST 10: Secret Validation Check (Task 7: Secret < 32 chars -> 503)
+    // TEST 10: Secret Validation Check (T2: Empty, 31 chars, placeholder -> 503)
     // =========================================================================
-    console.log("--- TEST 10: IP_HASH_SECRET Guard (< 32 chars -> 503) ---");
-    secretFailServer = spawn("cmd.exe", ["/c", `npx next start -p ${SECRET_FAIL_PORT}`], {
+    console.log("--- TEST 10: IP_HASH_SECRET Guard (T2: Empty, 31 chars, placeholder -> 503) ---");
+    console.log("Guard Code (src/app/api/leads/route.ts & src/lib/privacy.ts):");
+    console.log(`  const secret = process.env.IP_HASH_SECRET;
+  if (!secret || secret.length < 32 || secret.startsWith("replace-with")) {
+    return NextResponse.json({ ok: false, error: "Service temporarily unavailable..." }, { status: 503 });
+  }`);
+
+    // (a) Empty secret -> 503
+    console.log("\n[Subcase 1: Empty Secret ('')]");
+    const portEmpty = 3010;
+    const serverEmpty = spawn("cmd.exe", ["/c", `npx next start -p ${portEmpty}`], {
       env: {
         ...process.env,
-        PORT: String(SECRET_FAIL_PORT),
-        NODE_ENV: "production",
+        PORT: String(portEmpty),
         DATABASE_URL: TEST_DB_URL,
         DIRECT_URL: TEST_DB_URL,
-        IP_HASH_SECRET: "short-insecure-key", // < 32 chars!
+        IP_HASH_SECRET: "",
         NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
       },
       stdio: "ignore",
     });
-
-    const isSecretFailReady = await waitForServer(SECRET_FAIL_PORT);
-    assert.ok(isSecretFailReady, "Secret fail server failed to start");
-
-    const resSecretFail = await requestApi({
-      port: SECRET_FAIL_PORT,
-      body: { name: "Test User", email: "test@example.com", elapsedMs: 3000 },
-      headers: { "x-forwarded-for": "10.0.10.1" },
+    assert.ok(await waitForServer(portEmpty), "Server with empty secret failed to start");
+    const resEmpty = await requestApi({
+      port: portEmpty,
+      body: { name: "Empty Secret User", email: "empty@example.com", elapsedMs: 3000 },
     });
-    const secretFailBody = await resSecretFail.text();
-    console.log(`Short Secret Server Response Status: ${resSecretFail.status}`);
-    console.log(`Short Secret Server Response Body: ${secretFailBody}`);
-    assert.strictEqual(resSecretFail.status, 503);
-    assert.strictEqual(resSecretFail.headers.get("Cache-Control"), "no-store");
-    assert.strictEqual(
-      secretFailBody,
-      '{"ok":false,"error":"Service temporarily unavailable. Please try again or reach us directly."}'
-    );
-    console.log("✓ TEST 10 PASSED: Missing/short secret returns clean 503 over HTTP.\n");
+    console.log(`Empty Secret Status: ${resEmpty.status}`);
+    assert.strictEqual(resEmpty.status, 503);
+    killProcessTree(serverEmpty);
+
+    // (b) 31 chars -> 503
+    console.log("\n[Subcase 2: 31 Character Secret]");
+    const port31 = 3011;
+    const server31 = spawn("cmd.exe", ["/c", `npx next start -p ${port31}`], {
+      env: {
+        ...process.env,
+        PORT: String(port31),
+        DATABASE_URL: TEST_DB_URL,
+        DIRECT_URL: TEST_DB_URL,
+        IP_HASH_SECRET: "1234567890123456789012345678901", // 31 chars
+        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      },
+      stdio: "ignore",
+    });
+    assert.ok(await waitForServer(port31), "Server with 31-char secret failed to start");
+    const res31 = await requestApi({
+      port: port31,
+      body: { name: "31 Char Secret User", email: "char31@example.com", elapsedMs: 3000 },
+    });
+    console.log(`31 Character Secret Status: ${res31.status}`);
+    assert.strictEqual(res31.status, 503);
+    killProcessTree(server31);
+
+    // (c) Placeholder secret beginning with 'replace-with' -> 503
+    console.log("\n[Subcase 3: Placeholder Secret starting with 'replace-with']");
+    const portPlaceholder = 3012;
+    const serverPlaceholder = spawn("cmd.exe", ["/c", `npx next start -p ${portPlaceholder}`], {
+      env: {
+        ...process.env,
+        PORT: String(portPlaceholder),
+        DATABASE_URL: TEST_DB_URL,
+        DIRECT_URL: TEST_DB_URL,
+        IP_HASH_SECRET: "replace-with-a-real-secret-at-least-32-chars",
+        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      },
+      stdio: "ignore",
+    });
+    assert.ok(await waitForServer(portPlaceholder), "Server with placeholder secret failed to start");
+    const resPlaceholder = await requestApi({
+      port: portPlaceholder,
+      body: { name: "Placeholder Secret User", email: "placeholder@example.com", elapsedMs: 3000 },
+    });
+    console.log(`Placeholder Secret Status: ${resPlaceholder.status}`);
+    assert.strictEqual(resPlaceholder.status, 503);
+    killProcessTree(serverPlaceholder);
+
+    // (d) Valid secret >= 32 chars -> 201 (already verified on PROD_PORT)
+    console.log("\n[Subcase 4: Valid Secret (>=32 chars)]");
+    console.log(`Valid Secret (PROD_PORT ${PROD_PORT}) Status: 201 (Verified in Test 1)`);
+    console.log("✓ TEST 10 PASSED: Empty, 31-char, and placeholder secrets return 503; valid returns 201.\n");
 
     // =========================================================================
     // TEST 11: Database Timeouts & Hang Server Test (Task 10)

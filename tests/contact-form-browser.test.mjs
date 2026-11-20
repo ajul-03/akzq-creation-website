@@ -1,46 +1,52 @@
-import assert from "assert";
-import { execSync, spawn } from "child_process";
+import assert from "node:assert";
+import { spawn, execSync } from "node:child_process";
+import http from "node:http";
+import pg from "pg";
 import { chromium } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import EmbeddedPostgres from "embedded-postgres";
-import pg from "pg";
 
+const BROWSER_PORT = 3009;
 const PG_PORT = 54333;
 const TEST_DB_NAME = "akzq_browser_test_db";
 const TEST_DB_URL = `postgresql://postgres:password@127.0.0.1:${PG_PORT}/${TEST_DB_NAME}`;
-const BROWSER_PORT = 3009;
-const TEST_SECRET = "browser-test-salt-secret-32-chars-long!";
+const TEST_SECRET = "super-secret-browser-test-salt-32-chars!";
 
-function killProcessTree(child) {
-  if (!child || !child.pid) return;
+function waitForServer(port, timeoutMs = 30000) {
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      const req = http.get(`http://127.0.0.1:${port}/`, (res) => {
+        resolve(true);
+      });
+      req.on("error", () => {
+        if (Date.now() - start > timeoutMs) {
+          resolve(false);
+        } else {
+          setTimeout(check, 300);
+        }
+      });
+    };
+    check();
+  });
+}
+
+function killProcessTree(proc) {
+  if (!proc || !proc.pid) return;
   try {
-    execSync(`taskkill /pid ${child.pid} /f /t`, { stdio: "ignore" });
+    if (process.platform === "win32") {
+      execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: "ignore" });
+    } else {
+      proc.kill("SIGKILL");
+    }
   } catch {}
 }
 
-async function waitForServer(port, timeoutMs = 15000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/contact`);
-      if (res.status === 200) return true;
-    } catch {
-      await new Promise((r) => setTimeout(r, 400));
-    }
-  }
-  return false;
-}
-
-console.log("=== RUNNING HEADLESS CHROMIUM CONTACT FORM BROWSER TEST ===\n");
-
 async function runBrowserTest() {
-  // Safety check
-  if (!TEST_DB_NAME.includes("test")) {
-    throw new Error(`SAFETY VIOLATION: Database '${TEST_DB_NAME}' does not contain 'test'.`);
-  }
+  console.log("=== RUNNING HEADLESS CHROMIUM CONTACT FORM BROWSER TEST ===\n");
 
-  // 1. Start Disposable PostgreSQL
+  // 1. Start Disposable Postgres Cluster
   console.log("--- 1. Starting Disposable Postgres Cluster for Browser Test ---");
   const pgServer = new EmbeddedPostgres({
     port: PG_PORT,
@@ -90,7 +96,7 @@ async function runBrowserTest() {
       DIRECT_URL: TEST_DB_URL,
       IP_HASH_SECRET: TEST_SECRET,
       NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-      ALLOW_DEV_ORIGIN: "true", // Allows testing from localhost browser
+      ALLOWED_ORIGINS: `http://127.0.0.1:${BROWSER_PORT}`, // Explicit ALLOWED_ORIGINS (T6)
     },
     stdio: "ignore",
   });
@@ -210,33 +216,42 @@ async function runBrowserTest() {
     console.log("✓ Success modal is visible.");
 
     // =========================================================================
-    // TASK 2d: WhatsApp Link / Message Format Equals Legacy Format
+    // TASK 2d: WhatsApp Link / Message Parity Check
     // =========================================================================
     console.log("\n--- TASK 2d: Verifying WhatsApp Link Format ---");
-    const waBtnLocator = page.locator("#successWhatsAppBtn");
-    const waHref = await waBtnLocator.getAttribute("href");
-    console.log("Generated WhatsApp href:\n" + waHref);
+    const whatsAppBtnLocator = page.locator("#successWhatsAppBtn");
+    const generatedHref = await whatsAppBtnLocator.getAttribute("href");
+    console.log("Generated WhatsApp href:\n" + generatedHref);
 
+    // Legacy format verification
     const expectedPrefix = "https://wa.me/917510109730?text=";
-    assert.ok(waHref.startsWith(expectedPrefix), "WhatsApp link must start with https://wa.me/917510109730?text=");
+    assert.ok(generatedHref.startsWith(expectedPrefix), "Href must start with standard wa.me link");
 
-    const decodedMessage = decodeURIComponent(waHref.replace(expectedPrefix, ""));
-    console.log("Decoded WhatsApp Message:\n" + decodedMessage);
+    const encodedText = generatedHref.slice(expectedPrefix.length);
+    const decodedText = decodeURIComponent(encodedText);
+    console.log("Decoded WhatsApp Message:\n" + decodedText);
 
+    // Legacy expected pattern from contact.js:
+    // `Hi AKZQ.Creation, I am ${name}. I requested a fixed-price quote for ${service}. (Budget Range: ${budget}). Let's discuss!`
     const legacyExpectedMessage =
       "Hi AKZQ.Creation, I am Naveen Kumar. I requested a fixed-price quote for Branding & Identity. (Budget Range: Starter (₹15k \u2013 \u20B930k)). Let's discuss!";
     assert.strictEqual(
-      decodedMessage,
+      decodedText,
       legacyExpectedMessage,
-      "WhatsApp message text must equal the legacy format exactly"
+      "WhatsApp message text must match legacy contact.js template byte-for-byte"
     );
+    console.log("Legacy WhatsApp href Reference:");
+    console.log(`  https://wa.me/917510109730?text=${encodeURIComponent(legacyExpectedMessage)}`);
+    console.log("New Generated WhatsApp href:");
+    console.log(`  ${generatedHref}`);
     console.log("✓ TASK 2d PASSED: WhatsApp message format matches legacy format byte-for-byte.\n");
 
-    // Verify Lead row exists in PostgreSQL
+    // Verify Lead row in Postgres database
     const createdLead = await prisma.lead.findFirst({
       where: { email: "naveen.k@business.example" },
+      orderBy: { createdAt: "desc" },
     });
-    assert.ok(createdLead, "Lead row must exist in database");
+    assert.ok(createdLead, "Lead row must exist in the database");
     console.log("Created Lead Row in Database:");
     console.dir(createdLead, { depth: null });
     assert.strictEqual(createdLead.name, "Naveen Kumar");
@@ -282,10 +297,10 @@ async function runBrowserTest() {
 
     const fallback429 = page.locator("#formFallbackError");
     assert.strictEqual(await fallback429.isVisible(), true, "Fallback error must appear on 429");
-    const fallbackText = await fallback429.innerText();
-    console.log("Fallback Error Text on 429:\n" + fallbackText);
-    assert.ok(fallbackText.includes("+91 75101 09730"));
-    assert.ok(fallbackText.includes("WhatsApp"));
+    const fallbackText429 = await fallback429.innerText();
+    console.log("Fallback Error Text on 429:\n" + fallbackText429);
+    assert.ok(fallbackText429.includes("+91 75101 09730"));
+    assert.ok(fallbackText429.includes("WhatsApp"));
 
     const telLink = await fallback429.locator('a[href^="tel:"]').getAttribute("href");
     const waLink = await fallback429.locator('a[href*="wa.me"]').getAttribute("href");
@@ -311,7 +326,10 @@ async function runBrowserTest() {
 
     modalVisible = await page.locator("#formSuccessModal").isVisible();
     assert.strictEqual(modalVisible, false, "Modal must NOT appear on 503");
-    assert.strictEqual(await page.locator("#formFallbackError").isVisible(), true);
+    const fallback503 = page.locator("#formFallbackError");
+    assert.strictEqual(await fallback503.isVisible(), true);
+    const fallbackText503 = await fallback503.innerText();
+    console.log("Fallback Error Text on 503:\n" + fallbackText503);
     console.log("✓ Fallback error displayed on 503; modal hidden.");
     await page.unroute("**/api/leads");
 
@@ -327,51 +345,117 @@ async function runBrowserTest() {
 
     modalVisible = await page.locator("#formSuccessModal").isVisible();
     assert.strictEqual(modalVisible, false, "Modal must NOT appear on network failure");
-    assert.strictEqual(await page.locator("#formFallbackError").isVisible(), true);
+    const fallbackOffline = page.locator("#formFallbackError");
+    assert.strictEqual(await fallbackOffline.isVisible(), true);
+    const fallbackTextOffline = await fallbackOffline.innerText();
+    console.log("Fallback Error Text on Offline Failure:\n" + fallbackTextOffline);
     console.log("✓ Fallback error displayed on network failure; modal hidden.");
     await page.unroute("**/api/leads");
     console.log("✓ TASK 2c PASSED: All failure cases hide modal and display fallback error with working links.\n");
 
     // =========================================================================
-    // TASK 2e: Server-Side Validation Errors (400) Display in Field Error UI
+    // TASK 4: Real Server 400 Field Errors (No Route Interception)
     // =========================================================================
-    console.log("--- TASK 2e: Server-Side 400 Validation Errors Display ---");
+    console.log("--- TASK 4: Real Server 400 Validation Errors (No Route Interception) ---");
+    // Quote legacy messages
+    const legacyJsAlert = "Please fill in your Name, Email, and select the Required Service.";
+    console.log(`Quoted Legacy JS Alert Message (assets/js/contact.js:30):`);
+    console.log(`  "${legacyJsAlert}"`);
+
+    // Fill valid form, then set invalid email and bypass client HTML5 validation via noValidate
     await fillValidForm();
-    await page.route("**/api/leads", (route) => {
-      route.fulfill({
-        status: 400,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ok: false,
-          error: "Validation failed",
-          errors: {
-            email: ["Invalid email address domain"],
-            phone: ["Phone number format rejected by server"],
-          },
-        }),
-      });
+    await page.evaluate(() => {
+      const form = document.getElementById("agencyQuoteForm");
+      if (form) {
+        form.noValidate = true;
+        const emailInput = form.querySelector('[name="email"]');
+        if (emailInput) {
+          emailInput.value = "not-an-email-domain";
+        }
+      }
     });
 
     await page.click('button[type="submit"]', { noWaitAfter: true });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
 
     const emailErrorLocator = page.locator(".form-group:has(#clientEmail) .form-error");
-    const phoneErrorLocator = page.locator(".form-group:has(#clientPhone) .form-error");
-
     await emailErrorLocator.waitFor({ state: "visible", timeout: 5000 });
-    await phoneErrorLocator.waitFor({ state: "visible", timeout: 5000 });
+    const displayedEmailError = await emailErrorLocator.innerText();
 
-    const emailErrorText = await emailErrorLocator.innerText();
-    const phoneErrorText = await phoneErrorLocator.innerText();
+    console.log(`Legacy Validation Message:   "Please fill in your Email." (from "${legacyJsAlert}")`);
+    console.log(`Browser-Displayed Field Error: "${displayedEmailError}"`);
+    assert.strictEqual(displayedEmailError, "Please fill in your Email.");
+    console.log("✓ TASK 4 PASSED: Real server 400 maps field to legacy validation message and ignores server strings.\n");
 
-    console.log(`Email Field Error displayed: "${emailErrorText}"`);
-    console.log(`Phone Field Error displayed: "${phoneErrorText}"`);
+    // =========================================================================
+    // TASK 1: Browser Referrer & UTM Test
+    // =========================================================================
+    console.log("--- TASK 1: Browser Referrer & UTM Capturing ---");
+    // (a) Navigation with UTMs and HTTP Referer
+    await page.goto(
+      `http://127.0.0.1:${BROWSER_PORT}/contact?utm_source=test&utm_medium=cpc&utm_campaign=x`,
+      {
+        referer: "https://example.org/some-page?q=1",
+        waitUntil: "networkidle",
+      }
+    );
 
-    assert.strictEqual(emailErrorText, "Invalid email address domain");
-    assert.strictEqual(phoneErrorText, "Phone number format rejected by server");
-    assert.strictEqual(await page.locator("#formSuccessModal").isVisible(), false);
-    await page.unroute("**/api/leads");
-    console.log("✓ TASK 2e PASSED: Server-side 400 field errors rendered cleanly in form-error UI.\n");
+    await page.fill('#clientName', 'Referrer Test User');
+    await page.fill('#clientEmail', 'referrer.test@example.com');
+    await page.fill('#clientPhone', '+91 7510109730');
+    await page.selectOption('#serviceRequiredSelect', { index: 1 });
+    await page.waitForTimeout(2100);
+
+    const [utmRes] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes("/api/leads") && res.request().method() === "POST",
+        { timeout: 10000 }
+      ),
+      page.click('button[type="submit"]', { noWaitAfter: true }),
+    ]);
+    assert.strictEqual(utmRes.status(), 201);
+
+    const utmLead = await prisma.lead.findFirst({
+      where: { email: "referrer.test@example.com" },
+      orderBy: { createdAt: "desc" },
+    });
+    console.log("\nFull Lead Row with UTMs and Referrer (query stripped):");
+    console.dir(utmLead, { depth: null });
+    assert.ok(utmLead);
+    assert.strictEqual(utmLead.utmSource, "test");
+    assert.strictEqual(utmLead.utmMedium, "cpc");
+    assert.strictEqual(utmLead.utmCampaign, "x");
+    assert.strictEqual(utmLead.referrer, "https://example.org/some-page");
+
+    // (b) Direct navigation without referer
+    await page.goto(`http://127.0.0.1:${BROWSER_PORT}/contact`, {
+      waitUntil: "networkidle",
+    });
+
+    await page.fill('#clientName', 'Direct Nav User');
+    await page.fill('#clientEmail', 'direct.nav@example.com');
+    await page.fill('#clientPhone', '+91 7510109730');
+    await page.selectOption('#serviceRequiredSelect', { index: 1 });
+    await page.waitForTimeout(2100);
+
+    const [directRes] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes("/api/leads") && res.request().method() === "POST",
+        { timeout: 10000 }
+      ),
+      page.click('button[type="submit"]', { noWaitAfter: true }),
+    ]);
+    assert.strictEqual(directRes.status(), 201);
+
+    const directLead = await prisma.lead.findFirst({
+      where: { email: "direct.nav@example.com" },
+      orderBy: { createdAt: "desc" },
+    });
+    console.log("\nFull Lead Row from Direct Navigation (referrer null):");
+    console.dir(directLead, { depth: null });
+    assert.ok(directLead);
+    assert.strictEqual(directLead.referrer, null);
+    console.log("✓ TASK 1 PASSED: UTMs set, referrer stripped to origin+pathname, null on direct nav.\n");
 
   } finally {
     console.log("Cleaning up browser test resources...");
