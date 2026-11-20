@@ -96,16 +96,44 @@ const LeadInputSchema = z.object({
   elapsedMs: z.number().optional(),
 });
 
-function isAllowedOrigin(urlStr: string, siteUrl: string): boolean {
-  if (!urlStr) return false;
+function isAllowedOrigin(
+  headerValue: string | null,
+  siteUrl: string,
+  allowedOriginsEnv?: string
+): boolean {
+  if (!headerValue) return true; // Direct clients / cURL with no origin header are permitted
   try {
-    const parsed = new URL(urlStr);
-    const originBase = `${parsed.protocol}//${parsed.host}`;
-    const siteBase = new URL(siteUrl).origin;
-    if (originBase === siteBase) return true;
-    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
-      return process.env.NODE_ENV !== "production";
+    const parsedTarget = new URL(headerValue);
+    const targetOrigin = parsedTarget.origin;
+    if (!targetOrigin || targetOrigin === "null") return false;
+
+    const allowedSet = new Set<string>();
+    try {
+      allowedSet.add(new URL(siteUrl).origin);
+    } catch {}
+
+    if (allowedOriginsEnv) {
+      for (const item of allowedOriginsEnv.split(",")) {
+        const trimmed = item.trim();
+        if (trimmed) {
+          try {
+            allowedSet.add(new URL(trimmed).origin);
+          } catch {}
+        }
+      }
     }
+
+    if (allowedSet.has(targetOrigin)) {
+      return true;
+    }
+
+    // In development only, allow localhost and 127.0.0.1
+    if (process.env.NODE_ENV !== "production") {
+      if (parsedTarget.hostname === "localhost" || parsedTarget.hostname === "127.0.0.1") {
+        return true;
+      }
+    }
+
     return false;
   } catch {
     return false;
@@ -145,7 +173,7 @@ export async function POST(request: NextRequest) {
   const referer = request.headers.get("referer");
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://akzqcreation.com";
   const targetHeader = origin || referer;
-  if (targetHeader && !isAllowedOrigin(targetHeader, siteUrl)) {
+  if (!isAllowedOrigin(targetHeader, siteUrl, process.env.ALLOWED_ORIGINS)) {
     return NextResponse.json(
       { ok: false, error: "Forbidden: Origin or Referer not allowed" },
       { status: 403, headers: noStoreHeaders }
@@ -212,15 +240,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Extract client IP and hash via HMAC
+  // 8. Runtime Secret Validation: IP_HASH_SECRET must be set and >= 32 chars
+  const secret = process.env.IP_HASH_SECRET;
+  if (!secret || secret.length < 32) {
+    console.error("Configuration error: IP_HASH_SECRET is missing or under 32 characters");
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Service temporarily unavailable. Please try again or reach us directly.",
+      },
+      { status: 503, headers: noStoreHeaders }
+    );
+  }
+
+  // Extract client IP and hash via HMAC; use shared "unknown" bucket if IP missing
   const forwarded = request.headers.get("x-forwarded-for");
-  const rawIp =
-    (forwarded ? forwarded.split(",")[0].trim() : request.headers.get("x-real-ip")) ||
-    "127.0.0.1";
-  const ipHash = hashIp(rawIp);
+  const firstForwardedIp = forwarded ? forwarded.split(",")[0].trim() : null;
+  const rawIp = firstForwardedIp || request.headers.get("x-real-ip");
+  const isUnknownIp = !rawIp;
+  const clientIdentifier = isUnknownIp ? "unknown-client-ip" : rawIp;
+  const ipHash = hashIp(clientIdentifier, secret);
 
   try {
-    // 8. Service validation against published Services in DB
+    // 9. Service validation against published Services in DB
     let serviceRecord: { id: string; title: string; slug: string } | null = null;
     if (payload.service && payload.service.trim().length > 0) {
       const serviceInput = payload.service.trim();
@@ -264,7 +306,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(
             {
               ok: false,
-              error: `Invalid service '${serviceInput}'. Must match a published service.`,
+              error: "Invalid service selection. Please choose a published service.",
             },
             { status: 400, headers: noStoreHeaders }
           );
@@ -272,7 +314,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 9. Rate limiting: max 5 requests / hour, max 20 requests / day per ipHash
+    // 10. Rate limiting:
+    // Stricter limits for unknown IP bucket: 2/hour, 5/day
+    // Standard limits for known IP: 5/hour, 20/day
+    const hourlyLimit = isUnknownIp ? 2 : 5;
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const hourCount = await db.lead.count({
       where: {
@@ -281,7 +326,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (hourCount >= 5) {
+    if (hourCount >= hourlyLimit) {
+      const oldestInHour = await db.lead.findFirst({
+        where: { ipHash, createdAt: { gte: oneHourAgo } },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      });
+      const retryAfterSeconds = oldestInHour
+        ? Math.max(1, Math.ceil((oldestInHour.createdAt.getTime() + 60 * 60 * 1000 - Date.now()) / 1000))
+        : 3600;
+
       return NextResponse.json(
         {
           ok: false,
@@ -291,12 +345,13 @@ export async function POST(request: NextRequest) {
           status: 429,
           headers: {
             ...noStoreHeaders,
-            "Retry-After": "3600",
+            "Retry-After": String(retryAfterSeconds),
           },
         }
       );
     }
 
+    const dailyLimit = isUnknownIp ? 5 : 20;
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const dayCount = await db.lead.count({
       where: {
@@ -305,7 +360,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (dayCount >= 20) {
+    if (dayCount >= dailyLimit) {
+      const oldestInDay = await db.lead.findFirst({
+        where: { ipHash, createdAt: { gte: oneDayAgo } },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      });
+      const retryAfterSeconds = oldestInDay
+        ? Math.max(1, Math.ceil((oldestInDay.createdAt.getTime() + 24 * 60 * 60 * 1000 - Date.now()) / 1000))
+        : 86400;
+
       return NextResponse.json(
         {
           ok: false,
@@ -315,13 +379,13 @@ export async function POST(request: NextRequest) {
           status: 429,
           headers: {
             ...noStoreHeaders,
-            "Retry-After": "86400",
+            "Retry-After": String(retryAfterSeconds),
           },
         }
       );
     }
 
-    // 10. Deduplication: same email + same message within 10 minutes
+    // 11. Deduplication: same email + same message within 10 minutes
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const existingDuplicate = await db.lead.findFirst({
       where: {
@@ -353,7 +417,7 @@ export async function POST(request: NextRequest) {
     const budgetRange = mapBudgetRange(payload.budgetRange);
     const userAgent = request.headers.get("user-agent")?.slice(0, 255) || null;
 
-    // 11. Storage: Create Lead record
+    // 12. Storage: Create Lead record
     const lead = await db.lead.create({
       data: {
         source: "CONTACT_FORM",
@@ -376,7 +440,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 12. Create ActivityLog entry (ZERO PII in metadata)
+    // 13. Create ActivityLog entry (ZERO PII in metadata)
     await db.activityLog.create({
       data: {
         action: "lead.created",
@@ -391,8 +455,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 13. Optional email notification via after()
-    if (process.env.RESEND_API_KEY && process.env.NOTIFY_EMAIL) {
+    // 14. Optional email notification via after()
+    if (
+      process.env.RESEND_API_KEY &&
+      process.env.NOTIFY_EMAIL &&
+      process.env.RESEND_FROM_EMAIL
+    ) {
       after(async () => {
         await sendLeadNotification({
           leadId: lead.id,
