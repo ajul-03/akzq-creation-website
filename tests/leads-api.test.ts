@@ -33,7 +33,7 @@ function killProcessTree(child?: ChildProcess | null) {
   } catch {}
 }
 
-function spawnNextServer(port: number, env: Record<string, string | undefined>) {
+function spawnNextServer(port: number, env: NodeJS.ProcessEnv) {
   return spawn("npx", ["next", "start", "-p", String(port)], {
     shell: true,
     env,
@@ -157,11 +157,9 @@ async function runSuite() {
       NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
       ALLOWED_ORIGINS: "https://preview.akzqcreation.com",
       RESEND_API_KEY: "re_mock_test_key_placeholder",
-        NOTIFY_EMAIL: "notifications@akzqcreation.com",
-        RESEND_FROM_EMAIL: "leads@akzqcreation.com",
-        RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
-      },
-      stdio: "ignore",
+      NOTIFY_EMAIL: "notifications@akzqcreation.com",
+      RESEND_FROM_EMAIL: "leads@akzqcreation.com",
+      RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
     });
 
     const isReady = await waitForServer(PROD_PORT);
@@ -1023,8 +1021,6 @@ async function runSuite() {
       DIRECT_URL: `postgresql://postgres:password@127.0.0.1:${HANG_TCP_PORT}/hang_db`,
       IP_HASH_SECRET: TEST_SECRET,
       NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
-      },
-      stdio: "ignore",
     });
 
     const isTimeoutReady = await waitForServer(TIMEOUT_PORT);
