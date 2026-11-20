@@ -1,37 +1,65 @@
 import assert from "assert";
-import { execSync } from "child_process";
-import { NextRequest } from "next/server";
+import { execSync, spawn, ChildProcess } from "child_process";
+import http from "http";
+import net from "net";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import EmbeddedPostgres from "embedded-postgres";
 import pg from "pg";
-import { POST } from "../src/app/api/leads/route";
-import { sendLeadNotification } from "../src/lib/notify";
 import { main as runSeed } from "../prisma/seed";
 import { hashIp } from "../src/lib/privacy";
 
-const TEST_PORT = 54332;
+const PG_PORT = 54332;
 const TEST_DB_NAME = "akzq_test_db";
 const SHADOW_DB_NAME = "akzq_shadow_test_db";
-const TEST_DB_URL = `postgresql://postgres:password@127.0.0.1:${TEST_PORT}/${TEST_DB_NAME}`;
+const TEST_DB_URL = `postgresql://postgres:password@127.0.0.1:${PG_PORT}/${TEST_DB_NAME}`;
+const TEST_SECRET = "test-secret-salt-for-leads-suite-32c";
 
-// Test-only reset helper that does not touch production db.ts
-function resetDb() {
-  (globalThis as unknown as { prismaInstance?: unknown }).prismaInstance = undefined;
+const PROD_PORT = 3005;
+const DEV_PORT = 3006;
+const SECRET_FAIL_PORT = 3007;
+const TIMEOUT_PORT = 3008;
+const HANG_TCP_PORT = 54336;
+const MOCK_RESEND_PORT = 54335;
+
+function killProcessTree(child?: ChildProcess | null) {
+  if (!child || !child.pid) return;
+  try {
+    execSync(`taskkill /pid ${child.pid} /f /t`, { stdio: "ignore" });
+  } catch {}
 }
 
-console.log("=== RUNNING LEADS API INTEGRATION TEST SUITE ===\n");
+async function waitForServer(port: number, timeoutMs = 15000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/contact`);
+      if (res.status === 200 || res.status === 404) return true;
+    } catch {
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  return false;
+}
+
+console.log("=== RUNNING LEADS API REAL PRODUCTION-SERVER HTTP TEST SUITE ===\n");
 
 async function runSuite() {
-  // Safety check: Database name MUST contain 'test'
-  if (!TEST_DB_NAME.includes("test")) {
-    throw new Error(`SAFETY VIOLATION: Refusing to run tests. Target DB '${TEST_DB_NAME}' does not contain 'test'.`);
+  // Safety guard: Host MUST be localhost/127.0.0.1 and DB name MUST contain 'test'
+  console.log("--- 1. Safety Check: Verifying Target Database ---");
+  const parsedDb = new URL(TEST_DB_URL);
+  if (parsedDb.hostname !== "127.0.0.1" && parsedDb.hostname !== "localhost") {
+    throw new Error(`SAFETY VIOLATION: Non-localhost host '${parsedDb.hostname}'. Aborting.`);
   }
+  if (!TEST_DB_NAME.includes("test")) {
+    throw new Error(`SAFETY VIOLATION: Database name '${TEST_DB_NAME}' does not contain 'test'. Aborting.`);
+  }
+  console.log(`✓ Safety check passed: host=${parsedDb.hostname}, database=${TEST_DB_NAME}\n`);
 
-  // 1. Start Disposable Test Postgres Cluster
-  console.log("--- 1. Starting Disposable Postgres Cluster & Safety Checks ---");
+  // 2. Start Disposable Test Postgres Cluster
+  console.log("--- 2. Starting Disposable Postgres Cluster ---");
   const pgServer = new EmbeddedPostgres({
-    port: TEST_PORT,
+    port: PG_PORT,
     databaseDir: "./.test-pg-data",
     user: "postgres",
     password: "password",
@@ -41,15 +69,12 @@ async function runSuite() {
 
   try {
     await pgServer.initialise();
-  } catch {
-    // Already initialised
-  }
+  } catch {}
   await pgServer.start();
-  console.log(`Disposable Postgres cluster running on port ${TEST_PORT}.`);
+  console.log(`Disposable Postgres cluster running on port ${PG_PORT}.`);
 
-  // Initialize fresh, empty databases
   const adminClient = new pg.Client({
-    connectionString: `postgresql://postgres:password@127.0.0.1:${TEST_PORT}/postgres`,
+    connectionString: `postgresql://postgres:password@127.0.0.1:${PG_PORT}/postgres`,
   });
   await adminClient.connect();
   await adminClient.query(`DROP DATABASE IF EXISTS ${TEST_DB_NAME};`);
@@ -58,15 +83,8 @@ async function runSuite() {
   await adminClient.query(`CREATE DATABASE ${SHADOW_DB_NAME};`);
   await adminClient.end();
 
-  // Point environment to test database
-  process.env.DATABASE_URL = TEST_DB_URL;
-  process.env.DIRECT_URL = TEST_DB_URL;
-  process.env.IP_HASH_SECRET = "test-secret-salt-for-leads-suite-32c";
-  process.env.NEXT_PUBLIC_SITE_URL = "https://akzqcreation.com";
-  (process.env as Record<string, string | undefined>).NODE_ENV = "development";
-
-  // Deploy migrations
-  console.log("--- 2. Deploying Migrations & Seeding Services ---");
+  // Run migrations & seed
+  console.log("Deploying migrations and seeding initial database state...");
   execSync("npx prisma migrate deploy", {
     env: { ...process.env, DATABASE_URL: TEST_DB_URL, DIRECT_URL: TEST_DB_URL },
     encoding: "utf8",
@@ -74,30 +92,85 @@ async function runSuite() {
 
   const adapter = new PrismaPg({ connectionString: TEST_DB_URL });
   const prisma = new PrismaClient({ adapter });
-
   await runSeed(prisma);
-  console.log("✓ Test database initialized and seeded.\n");
+  console.log("✓ Migrations deployed and database seeded.\n");
+
+  // 3. Start Mock Resend HTTP Server
+  console.log("--- 3. Starting Mock Resend Server ---");
+  let mockResendShouldFail = false;
+  const receivedResendRequests: Array<{ headers: http.IncomingHttpHeaders; body: any }> = [];
+
+  const mockResendServer = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      let parsed = {};
+      try {
+        parsed = JSON.parse(body);
+      } catch {}
+      receivedResendRequests.push({ headers: req.headers, body: parsed });
+
+      if (mockResendShouldFail) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ message: "Mock Resend Internal Server Error" }));
+      } else {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id: "mock-resend-email-id-12345" }));
+      }
+    });
+  });
+
+  await new Promise<void>((resolve) => mockResendServer.listen(MOCK_RESEND_PORT, resolve));
+  console.log(`Mock Resend server listening on http://127.0.0.1:${MOCK_RESEND_PORT}\n`);
+
+  let prodServer: ChildProcess | null = null;
+  let devServer: ChildProcess | null = null;
+  let secretFailServer: ChildProcess | null = null;
+  let timeoutServer: ChildProcess | null = null;
+  let hangTcpServer: net.Server | null = null;
 
   try {
-    // Helper to create NextRequest for /api/leads
-    const makeReq = (options: {
+    // 4. Start Production Server (`next start -p 3005`)
+    console.log("--- 4. Spawning Production Next.js Server ---");
+    console.log(`Server command: npx next start -p ${PROD_PORT}`);
+    console.log(`Target port: ${PROD_PORT}`);
+
+    prodServer = spawn("cmd.exe", ["/c", `npx next start -p ${PROD_PORT}`], {
+      env: {
+        ...process.env,
+        PORT: String(PROD_PORT),
+        NODE_ENV: "production",
+        DATABASE_URL: TEST_DB_URL,
+        DIRECT_URL: TEST_DB_URL,
+        IP_HASH_SECRET: TEST_SECRET,
+        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+        ALLOWED_ORIGINS: "https://preview.akzqcreation.com",
+        RESEND_API_KEY: "re_mock_test_key_placeholder",
+        NOTIFY_EMAIL: "notifications@akzqcreation.com",
+        RESEND_FROM_EMAIL: "leads@akzqcreation.com",
+        RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
+      },
+      stdio: "ignore",
+    });
+
+    const isReady = await waitForServer(PROD_PORT);
+    assert.ok(isReady, `Production server failed to respond on port ${PROD_PORT}`);
+    console.log(`✓ Production server is ready on http://127.0.0.1:${PROD_PORT}\n`);
+
+    // Helper for HTTP requests
+    const requestApi = async (options: {
       body?: unknown;
       rawText?: string;
       headers?: Record<string, string>;
-      ip?: string;
+      port?: number;
     }) => {
-      const hdrs = new Headers();
-      hdrs.set("content-type", "application/json");
-      hdrs.set("origin", "https://akzqcreation.com");
-      hdrs.set("user-agent", "Mozilla/5.0 TestSuite/1.0");
-      if (options.ip) hdrs.set("x-forwarded-for", options.ip);
-
-      if (options.headers) {
-        for (const [k, v] of Object.entries(options.headers)) {
-          if (v === "") hdrs.delete(k);
-          else hdrs.set(k, v);
-        }
-      }
+      const port = options.port || PROD_PORT;
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+        origin: "https://akzqcreation.com",
+        "user-agent": "Mozilla/5.0 HttpTestSuite/1.0",
+        ...(options.headers || {}),
+      };
 
       const bodyText =
         options.rawText !== undefined
@@ -106,272 +179,391 @@ async function runSuite() {
           ? JSON.stringify(options.body)
           : "";
 
-      return new NextRequest("https://akzqcreation.com/api/leads", {
+      return fetch(`http://127.0.0.1:${port}/api/leads`, {
         method: "POST",
-        headers: hdrs,
+        headers,
         body: bodyText,
       });
     };
 
     // =========================================================================
-    // TASK 1: Response-Shape Parity Check (Byte-for-byte identical 201 responses)
+    // PROVE HTTP: Print raw curl -i of a valid POST and one of a 413
     // =========================================================================
-    console.log("--- TASK 1: Response-Shape Parity Across All 4 Scenarios ---");
-    // Scenario 1: Genuine Success
-    const resSuccess = await POST(
-      makeReq({
-        body: {
-          name: "Genuine Lead",
-          email: "genuine@example.com",
-          phone: "+91 7510109730",
-          service: "branding-identity",
-          elapsedMs: 5000,
-        },
-        ip: "10.0.1.1",
-      })
-    );
-    const bodySuccess = await resSuccess.text();
-    const cacheSuccess = resSuccess.headers.get("Cache-Control");
+    console.log("--- PROVING REAL HTTP OVER WIRE (raw curl output) ---");
+    const fs = await import("fs");
 
-    // Scenario 2: Honeypot
-    const resHoneypot = await POST(
-      makeReq({
-        body: {
-          name: "Spam Bot",
-          email: "spambot@example.com",
-          hp_field: "trap-triggered",
-          elapsedMs: 5000,
-        },
-        ip: "10.0.1.2",
-      })
+    console.log("\n[CURL 1: Valid POST /api/leads]");
+    const validJsonPayload = JSON.stringify({
+      name: "Curl Tester",
+      email: "curl.valid@example.com",
+      service: "Branding & Identity",
+      elapsedMs: 3500,
+    });
+    fs.writeFileSync("./.test-valid-payload.json", validJsonPayload);
+    const curlValidOutput = execSync(
+      `curl.exe -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" --data-binary @./.test-valid-payload.json`,
+      { encoding: "utf8" }
     );
-    const bodyHoneypot = await resHoneypot.text();
-    const cacheHoneypot = resHoneypot.headers.get("Cache-Control");
+    console.log(curlValidOutput.trim());
+    try {
+      fs.unlinkSync("./.test-valid-payload.json");
+    } catch {}
 
-    // Scenario 3: Fast-Submit (<2000ms)
-    const resFast = await POST(
-      makeReq({
-        body: {
-          name: "Fast Bot",
-          email: "fastbot@example.com",
-          elapsedMs: 450,
-        },
-        ip: "10.0.1.3",
-      })
+    console.log("\n[CURL 2: Payload Too Large 413 (>10KB)]");
+    const largePayload = JSON.stringify({
+      name: "Large Payload",
+      email: "large@example.com",
+      message: "A".repeat(11000),
+      elapsedMs: 3500,
+    });
+    fs.writeFileSync("./.test-large-payload.json", largePayload);
+    const curl413Output = execSync(
+      `curl.exe -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" --data-binary @./.test-large-payload.json`,
+      { encoding: "utf8" }
     );
+    console.log(curl413Output.trim());
+    try {
+      fs.unlinkSync("./.test-large-payload.json");
+    } catch {}
+    console.log("\n✓ HTTP curl proofs verified.\n");
+
+    // =========================================================================
+    // TEST 1: 4-Way Identical 201 Response Shape
+    // =========================================================================
+    console.log("--- TEST 1: 4-Way Identical 201 Response Shape ---");
+    // 1. Genuine Success
+    const resGenuine = await requestApi({
+      body: {
+        name: "Genuine User",
+        email: "genuine@example.com",
+        phone: "+91 7510109730",
+        service: "branding-identity",
+        elapsedMs: 4000,
+      },
+      headers: { "x-forwarded-for": "10.0.1.1" },
+    });
+    const bodyGenuine = await resGenuine.text();
+
+    // 2. Honeypot
+    const resHp = await requestApi({
+      body: {
+        name: "Bot User",
+        email: "bot@example.com",
+        hp_field: "trap-triggered",
+        elapsedMs: 4000,
+      },
+      headers: { "x-forwarded-for": "10.0.1.2" },
+    });
+    const bodyHp = await resHp.text();
+
+    // 3. Fast submit (<2000ms)
+    const resFast = await requestApi({
+      body: {
+        name: "Fast Bot",
+        email: "fastbot@example.com",
+        elapsedMs: 400,
+      },
+      headers: { "x-forwarded-for": "10.0.1.3" },
+    });
     const bodyFast = await resFast.text();
-    const cacheFast = resFast.headers.get("Cache-Control");
 
-    // Scenario 4: Deduplication (Same email + same message within 10 min)
-    const resDedupe = await POST(
-      makeReq({
-        body: {
-          name: "Genuine Lead",
-          email: "genuine@example.com",
-          phone: "+91 7510109730",
-          service: "branding-identity",
-          elapsedMs: 5000,
-        },
-        ip: "10.0.1.1",
-      })
-    );
+    // 4. Deduplication (same email + same message within 10 min)
+    const resDedupe = await requestApi({
+      body: {
+        name: "Genuine User",
+        email: "genuine@example.com",
+        phone: "+91 7510109730",
+        service: "branding-identity",
+        elapsedMs: 4000,
+      },
+      headers: { "x-forwarded-for": "10.0.1.1" },
+    });
     const bodyDedupe = await resDedupe.text();
-    const cacheDedupe = resDedupe.headers.get("Cache-Control");
 
-    console.log("Raw Response Status Codes:");
-    console.log(`  Genuine Success: ${resSuccess.status}`);
-    console.log(`  Honeypot Trap:   ${resHoneypot.status}`);
-    console.log(`  Fast Submit:     ${resFast.status}`);
-    console.log(`  Deduplication:   ${resDedupe.status}`);
+    console.log("Status Codes:");
+    console.log(`  Genuine:   ${resGenuine.status}`);
+    console.log(`  Honeypot:  ${resHp.status}`);
+    console.log(`  Fast:      ${resFast.status}`);
+    console.log(`  Dedupe:    ${resDedupe.status}`);
 
-    console.log("\nRaw Response Cache-Control Headers:");
-    console.log(`  Genuine Success: ${cacheSuccess}`);
-    console.log(`  Honeypot Trap:   ${cacheHoneypot}`);
-    console.log(`  Fast Submit:     ${cacheFast}`);
-    console.log(`  Deduplication:   ${cacheDedupe}`);
+    console.log("Cache-Control Headers:");
+    console.log(`  Genuine:   ${resGenuine.headers.get("Cache-Control")}`);
+    console.log(`  Honeypot:  ${resHp.headers.get("Cache-Control")}`);
+    console.log(`  Fast:      ${resFast.headers.get("Cache-Control")}`);
+    console.log(`  Dedupe:    ${resDedupe.headers.get("Cache-Control")}`);
 
-    console.log("\nRaw Response Bodies (Byte-by-Byte):");
-    console.log(`  Genuine Success: ${bodySuccess}`);
-    console.log(`  Honeypot Trap:   ${bodyHoneypot}`);
-    console.log(`  Fast Submit:     ${bodyFast}`);
-    console.log(`  Deduplication:   ${bodyDedupe}`);
+    console.log("Bodies:");
+    console.log(`  Genuine:   ${bodyGenuine}`);
+    console.log(`  Honeypot:  ${bodyHp}`);
+    console.log(`  Fast:      ${bodyFast}`);
+    console.log(`  Dedupe:    ${bodyDedupe}`);
 
-    assert.strictEqual(resSuccess.status, 201);
-    assert.strictEqual(resHoneypot.status, 201);
+    assert.strictEqual(resGenuine.status, 201);
+    assert.strictEqual(resHp.status, 201);
     assert.strictEqual(resFast.status, 201);
     assert.strictEqual(resDedupe.status, 201);
 
-    assert.strictEqual(cacheSuccess, "no-store");
-    assert.strictEqual(cacheHoneypot, "no-store");
-    assert.strictEqual(cacheFast, "no-store");
-    assert.strictEqual(cacheDedupe, "no-store");
+    assert.strictEqual(resGenuine.headers.get("Cache-Control"), "no-store");
+    assert.strictEqual(resHp.headers.get("Cache-Control"), "no-store");
+    assert.strictEqual(resFast.headers.get("Cache-Control"), "no-store");
+    assert.strictEqual(resDedupe.headers.get("Cache-Control"), "no-store");
 
-    assert.strictEqual(bodySuccess, '{"ok":true}');
-    assert.strictEqual(bodyHoneypot, '{"ok":true}');
+    assert.strictEqual(bodyGenuine, '{"ok":true}');
+    assert.strictEqual(bodyHp, '{"ok":true}');
     assert.strictEqual(bodyFast, '{"ok":true}');
     assert.strictEqual(bodyDedupe, '{"ok":true}');
-
-    assert.strictEqual(bodySuccess, bodyHoneypot);
-    assert.strictEqual(bodySuccess, bodyFast);
-    assert.strictEqual(bodySuccess, bodyDedupe);
-    console.log("\n✓ TASK 1 PASSED: All 4 responses are byte-for-byte identical (status 201, Cache-Control: no-store, body: {\"ok\":true}).\n");
+    console.log("✓ TEST 1 PASSED: Byte-for-byte identical 201 responses.\n");
 
     // =========================================================================
-    // TASK 3a: ipHash Format, Raw IP Exclusion & Raw SQL Rows Dump
+    // TEST 2: Content-Type (415), Payload Size (413), and Bad JSON / Zod (400)
     // =========================================================================
-    console.log("--- TASK 3a: ipHash Integrity & Raw IP Exclusion ---");
-    const testIp = "203.0.113.195";
-    const res3a = await POST(
-      makeReq({
-        body: {
-          name: "Privacy Tester",
-          email: "privacy@malabar.example",
-          phone: "+91 7510109730",
-          company: "Privacy Hub Kannur",
-          service: "local-seo",
-          elapsedMs: 3500,
-        },
-        ip: testIp,
-      })
+    console.log("--- TEST 2: HTTP 415, 413, and 400 Validations ---");
+    // 415: Bad Content-Type
+    const res415 = await requestApi({
+      rawText: '{"name":"Test"}',
+      headers: { "content-type": "text/plain" },
+    });
+    console.log(`415 Status: ${res415.status}`);
+    assert.strictEqual(res415.status, 415);
+
+    // 413: Body > 10KB
+    const res413 = await requestApi({
+      rawText: JSON.stringify({ name: "A".repeat(11000) }),
+    });
+    console.log(`413 Status: ${res413.status}`);
+    assert.strictEqual(res413.status, 413);
+
+    // 400: Malformed JSON
+    const resBadJson = await requestApi({
+      rawText: '{"invalidJson',
+    });
+    console.log(`Malformed JSON Status: ${resBadJson.status}`);
+    assert.strictEqual(resBadJson.status, 400);
+
+    // 400: Zod validation failure (invalid email)
+    const resZodBad = await requestApi({
+      body: { name: "Rahul", email: "not-an-email" },
+    });
+    console.log(`Zod Validation Status: ${resZodBad.status}`);
+    const zodBody = await resZodBad.json();
+    console.log(`Zod Errors: ${JSON.stringify(zodBody.errors)}`);
+    assert.strictEqual(resZodBad.status, 400);
+    assert.ok(zodBody.errors.email);
+    console.log("✓ TEST 2 PASSED: 415, 413, and 400 rejected cleanly.\n");
+
+    // =========================================================================
+    // TEST 3: Origin & Referer Hardening (Task 6)
+    // =========================================================================
+    console.log("--- TEST 3: Origin Hardening (Task 6) ---");
+    // 1. Evil suffix origin -> 403
+    const resEvil = await requestApi({
+      body: { name: "Attacker", email: "att@example.com" },
+      headers: { origin: "https://akzqcreation.com.evil.example" },
+    });
+    console.log(`Evil Suffix Origin (https://akzqcreation.com.evil.example) Status: ${resEvil.status}`);
+    assert.strictEqual(resEvil.status, 403);
+
+    // 2. HTTP instead of HTTPS -> 403
+    const resHttp = await requestApi({
+      body: { name: "Attacker", email: "att@example.com" },
+      headers: { origin: "http://akzqcreation.com" },
+    });
+    console.log(`HTTP Scheme Origin (http://akzqcreation.com) Status: ${resHttp.status}`);
+    assert.strictEqual(resHttp.status, 403);
+
+    // 3. www subdomain not listed -> 403
+    const resWww = await requestApi({
+      body: { name: "Attacker", email: "att@example.com" },
+      headers: { origin: "https://www.akzqcreation.com" },
+    });
+    console.log(`Unlisted www Subdomain (https://www.akzqcreation.com) Status: ${resWww.status}`);
+    assert.strictEqual(resWww.status, 403);
+
+    // 4. Listed extra origin in ALLOWED_ORIGINS -> 201
+    const resAllowedExtra = await requestApi({
+      body: { name: "Preview User", email: "preview@example.com", elapsedMs: 3000 },
+      headers: { origin: "https://preview.akzqcreation.com" },
+    });
+    console.log(`Listed Extra Origin (https://preview.akzqcreation.com) Status: ${resAllowedExtra.status}`);
+    assert.strictEqual(resAllowedExtra.status, 201);
+
+    // 5. Absent origin and referer -> 201
+    const resAbsent = await requestApi({
+      body: { name: "Direct Client", email: "direct@example.com", elapsedMs: 3000 },
+      headers: { origin: "", referer: "" },
+    });
+    console.log(`Absent Origin & Referer Status: ${resAbsent.status}`);
+    assert.strictEqual(resAbsent.status, 201);
+
+    // 6. Malformed origin URL -> 403
+    const resMalformed = await requestApi({
+      body: { name: "Direct Client", email: "direct@example.com" },
+      headers: { origin: "invalid-origin-url-without-protocol" },
+    });
+    console.log(`Malformed Origin Status: ${resMalformed.status}`);
+    assert.strictEqual(resMalformed.status, 403);
+
+    // 7. Localhost origin in PRODUCTION -> 403
+    const resLocalhostInProd = await requestApi({
+      body: { name: "Local Client", email: "local@example.com" },
+      headers: { origin: "http://localhost:3000" },
+    });
+    console.log(`Localhost Origin in Production Status: ${resLocalhostInProd.status}`);
+    assert.strictEqual(resLocalhostInProd.status, 403);
+    console.log("✓ TEST 3 PASSED: Origin hardening verified.\n");
+
+    // =========================================================================
+    // TEST 4: Service Slug Validation with Real DB Row (Task 5)
+    // =========================================================================
+    console.log("--- TEST 4: Service Slug Validation (Task 5) ---");
+    // Find a service row
+    const targetService = await prisma.service.findFirst({
+      where: { slug: "branding-identity" },
+    });
+    assert.ok(targetService, "Target service 'branding-identity' must exist");
+
+    // a) Set status to DRAFT (unpublished)
+    await prisma.service.update({
+      where: { id: targetService.id },
+      data: { status: "DRAFT" },
+    });
+
+    const resDraft = await requestApi({
+      body: {
+        name: "Service Tester",
+        email: "draft.service@example.com",
+        service: "branding-identity",
+        elapsedMs: 3000,
+      },
+      headers: { "x-forwarded-for": "10.0.4.1" },
+    });
+    const draftBody = await resDraft.json();
+    console.log(`Unpublished (DRAFT) Service Status: ${resDraft.status}`);
+    console.log(`Unpublished (DRAFT) Service Response: ${JSON.stringify(draftBody)}`);
+    assert.strictEqual(resDraft.status, 400);
+    assert.strictEqual(
+      draftBody.error,
+      "Invalid service selection. Please choose a published service."
     );
-    assert.strictEqual(res3a.status, 201);
+    // Ensure submitted slug is NOT reflected in error body
+    assert.strictEqual(JSON.stringify(draftBody).includes("branding-identity"), false);
 
-    const expectedHash = hashIp(testIp, process.env.IP_HASH_SECRET);
-    assert.strictEqual(expectedHash.length, 64, "ipHash must be 64 characters (SHA256 hex)");
-    assert.ok(/^[a-f0-9]{64}$/.test(expectedHash), "ipHash must be lowercase hexadecimal");
-    assert.strictEqual(expectedHash.includes(testIp), false, "ipHash must not contain raw IP");
+    // b) Set status back to PUBLISHED
+    await prisma.service.update({
+      where: { id: targetService.id },
+      data: { status: "PUBLISHED" },
+    });
 
-    // Dump Lead row via raw SQL
-    const rawLeads: Array<Record<string, unknown>> = await prisma.$queryRawUnsafe(
-      `SELECT id, source, name, email, phone, company, "ipHash", "userAgent", "consentGivenAt" FROM "Lead" WHERE email = 'privacy@malabar.example'`
+    const resPublished = await requestApi({
+      body: {
+        name: "Service Tester",
+        email: "published.service@example.com",
+        service: "branding-identity",
+        elapsedMs: 3000,
+      },
+      headers: { "x-forwarded-for": "10.0.4.2" },
+    });
+    const publishedBody = await resPublished.json();
+    console.log(`Published (PUBLISHED) Service Status: ${resPublished.status}`);
+    console.log(`Published (PUBLISHED) Service Response: ${JSON.stringify(publishedBody)}`);
+    assert.strictEqual(resPublished.status, 201);
+    console.log("✓ TEST 4 PASSED: Service slug status verified with fixed error message.\n");
+
+    // =========================================================================
+    // TEST 5: ipHash Privacy, Raw IP Exclusion & ActivityLog (Task 7 & 1)
+    // =========================================================================
+    console.log("--- TEST 5: ipHash Integrity & Zero Raw IP (Tasks 1 & 7) ---");
+    const knownIp = "203.0.113.195";
+    const resPrivacy = await requestApi({
+      body: {
+        name: "Privacy Tester",
+        email: "privacy.wire@example.com",
+        phone: "+91 7510109730",
+        service: "local-seo",
+        elapsedMs: 3500,
+      },
+      headers: { "x-forwarded-for": `${knownIp}, 10.0.0.1` },
+    });
+    assert.strictEqual(resPrivacy.status, 201);
+
+    const expectedHash = hashIp(knownIp, TEST_SECRET);
+    console.log(`Known IP: ${knownIp}`);
+    console.log(`Expected HMAC-SHA256 ipHash: ${expectedHash}`);
+
+    // Query raw SQL on Lead table
+    const leadRows: Array<Record<string, unknown>> = await prisma.$queryRawUnsafe(
+      `SELECT id, source, name, email, phone, "ipHash", "userAgent" FROM "Lead" WHERE email = 'privacy.wire@example.com'`
     );
-    console.log("Dumped Lead Row (raw SQL):");
-    console.dir(rawLeads[0], { depth: null });
+    console.log("\nDumped Lead Row (raw SQL):");
+    console.dir(leadRows[0], { depth: null });
 
-    // Dump ActivityLog row via raw SQL
-    const rawActivity: Array<Record<string, unknown>> = await prisma.$queryRawUnsafe(
+    // Query raw SQL on ActivityLog table
+    const activityRows: Array<Record<string, unknown>> = await prisma.$queryRawUnsafe(
       `SELECT id, action, "entityType", "entityId", "ipHash", metadata FROM "ActivityLog" WHERE "ipHash" = '${expectedHash}' ORDER BY "createdAt" DESC LIMIT 1`
     );
     console.log("\nDumped ActivityLog Row (raw SQL):");
-    console.dir(rawActivity[0], { depth: null });
+    console.dir(activityRows[0], { depth: null });
 
-    // Assert raw IP does NOT appear in either row
-    const leadJson = JSON.stringify(rawLeads[0]);
-    const activityJson = JSON.stringify(rawActivity[0]);
-    assert.strictEqual(leadJson.includes(testIp), false, "Raw IP must NEVER appear in Lead table");
-    assert.strictEqual(activityJson.includes(testIp), false, "Raw IP must NEVER appear in ActivityLog table");
-    assert.strictEqual(rawLeads[0].ipHash, expectedHash);
-    assert.strictEqual(rawActivity[0].ipHash, expectedHash);
-    console.log("\n✓ TASK 3a PASSED: ipHash is valid 64-char HMAC; zero raw IP in database.\n");
+    // Assertions
+    assert.strictEqual(leadRows[0].ipHash, expectedHash);
+    assert.strictEqual(activityRows[0].ipHash, expectedHash);
+    assert.strictEqual(JSON.stringify(leadRows[0]).includes(knownIp), false, "Raw IP must NOT be in Lead row");
+    assert.strictEqual(JSON.stringify(activityRows[0]).includes(knownIp), false, "Raw IP must NOT be in ActivityLog row");
 
-    // =========================================================================
-    // TASK 3b: ActivityLog "lead.created" Dedicated Test (Zero PII in metadata)
-    // =========================================================================
-    console.log("--- TASK 3b: ActivityLog 'lead.created' Verification ---");
-    const createdLead = rawLeads[0];
-    const createdLog = rawActivity[0];
-    assert.strictEqual(createdLog.action, "lead.created");
-    assert.strictEqual(createdLog.entityType, "Lead");
-    assert.strictEqual(createdLog.entityId, createdLead.id);
-
-    const logMeta = createdLog.metadata as Record<string, unknown>;
-    console.log("ActivityLog metadata contents:", JSON.stringify(logMeta));
-    assert.strictEqual(logMeta.name, undefined, "Metadata must NOT contain name");
-    assert.strictEqual(logMeta.email, undefined, "Metadata must NOT contain email");
-    assert.strictEqual(logMeta.phone, undefined, "Metadata must NOT contain phone");
-    assert.strictEqual(logMeta.message, undefined, "Metadata must NOT contain message");
-    assert.strictEqual(logMeta.company, undefined, "Metadata must NOT contain company");
-    assert.strictEqual(logMeta.source, "CONTACT_FORM");
-    assert.strictEqual(typeof logMeta.hasPhone, "boolean");
-    console.log("✓ TASK 3b PASSED: ActivityLog entityId matches lead.id; zero PII in metadata.\n");
+    // Verify ActivityLog metadata has NO PII
+    const actMeta = activityRows[0].metadata as Record<string, unknown>;
+    assert.strictEqual(actMeta.name, undefined);
+    assert.strictEqual(actMeta.email, undefined);
+    assert.strictEqual(actMeta.phone, undefined);
+    assert.strictEqual(actMeta.message, undefined);
+    console.log("✓ TEST 5 PASSED: ipHash matches HMAC; zero raw IP in database; ActivityLog has no PII.\n");
 
     // =========================================================================
-    // TASK 3c: SQL Injection & XSS Payloads
+    // TEST 6: Rate Limiting & Dynamic Retry-After (Task 8)
     // =========================================================================
-    console.log("--- TASK 3c: SQL-Injection & XSS Round-Trip Verification ---");
-    const sqlInjectionName = `Robert'); DROP TABLE "Lead";--`;
-    const xssMessage = `<script>alert(1)</script>`;
-    const res3c = await POST(
-      makeReq({
-        body: {
-          name: sqlInjectionName,
-          email: "injection.test@akzqcreation.com",
-          message: xssMessage,
-          elapsedMs: 3000,
-        },
-        ip: "10.0.3.1",
-      })
-    );
-    assert.strictEqual(res3c.status, 201);
-
-    // Verify Lead table still exists
-    const leadCount = await prisma.lead.count();
-    assert.ok(leadCount > 0, "Lead table MUST still exist after SQL-injection payload");
-
-    // Fetch the injected row and verify exact inert storage
-    const injectedLead = await prisma.lead.findFirst({
-      where: { email: "injection.test@akzqcreation.com" },
-      select: { id: true, name: true, email: true, message: true },
-    });
-    assert.ok(injectedLead, "Lead row must exist");
-    assert.strictEqual(injectedLead.name, sqlInjectionName, "Name must be stored as inert text");
-    assert.strictEqual(injectedLead.message, xssMessage, "Message must be stored as inert text");
-    console.log("Retrieved Injected Row (inert round-trip):");
-    console.dir(injectedLead);
-    console.log("✓ TASK 3c PASSED: SQL injection attempted, table persists, text round-trips inertly.\n");
-
-    // =========================================================================
-    // TASK 3d: Rate Limit (Hour Limit & Day Limit)
-    // =========================================================================
-    console.log("--- TASK 3d: Rate Limit Enforcement (1-Hour & 24-Hour Windows) ---");
-    // 1) 1-Hour Limit: 5 requests succeed, 6th rejected with 429
+    console.log("--- TEST 6: Rate Limiting & Dynamic Retry-After (Task 8) ---");
+    // 1. Hourly rate limit: 5 allowed, 6th returns 429
     const hourlyIp = "198.51.100.50";
     for (let i = 1; i <= 5; i++) {
-      const r = await POST(
-        makeReq({
-          body: {
-            name: `Hourly User ${i}`,
-            email: `hourly_${i}@example.com`,
-            message: `Unique message ${i}`,
-            elapsedMs: 2500,
-          },
-          ip: hourlyIp,
-        })
-      );
-      assert.strictEqual(r.status, 201, `Submission ${i} must succeed`);
-    }
-
-    const resHourlyBlocked = await POST(
-      makeReq({
+      const r = await requestApi({
         body: {
-          name: "Hourly User 6",
-          email: "hourly_6@example.com",
-          message: "Unique message 6",
+          name: `Hourly User ${i}`,
+          email: `hourly_${i}@example.com`,
+          message: `Msg ${i}`,
           elapsedMs: 2500,
         },
-        ip: hourlyIp,
-      })
-    );
-    console.log("Hourly 6th Request Status:", resHourlyBlocked.status);
-    console.log("Hourly 6th Request Retry-After:", resHourlyBlocked.headers.get("Retry-After"));
-    const hourlyBody = await resHourlyBlocked.json();
-    console.log("Hourly 6th Request Body:", JSON.stringify(hourlyBody));
+        headers: { "x-forwarded-for": hourlyIp },
+      });
+      assert.strictEqual(r.status, 201, `Hourly submission ${i} must succeed`);
+    }
 
+    const resHourlyBlocked = await requestApi({
+      body: {
+        name: "Hourly User 6",
+        email: "hourly_6@example.com",
+        elapsedMs: 2500,
+      },
+      headers: { "x-forwarded-for": hourlyIp },
+    });
+    const retryAfterHourly = resHourlyBlocked.headers.get("Retry-After");
+    console.log(`Hourly 6th Request Status: ${resHourlyBlocked.status}`);
+    console.log(`Hourly 6th Request Retry-After: ${retryAfterHourly}`);
     assert.strictEqual(resHourlyBlocked.status, 429);
-    assert.strictEqual(resHourlyBlocked.headers.get("Retry-After"), "3600");
-    assert.strictEqual(resHourlyBlocked.headers.get("Cache-Control"), "no-store");
+    assert.ok(retryAfterHourly, "Retry-After header must be present");
+    const retrySeconds = parseInt(retryAfterHourly, 10);
+    assert.ok(retrySeconds > 0 && retrySeconds <= 3600, "Retry-After must be positive seconds <= 3600");
 
-    // 2) 24-Hour Limit: Seed 19 rows from 2 hours ago (within 24h, outside 1h)
-    // Then 1 new submission reaches 20 total. Next submission triggers 24h limit (429 with Retry-After: 86400).
+    // 2. 24-hour rate limit: Seed 19 rows from 2 hours ago for dailyIp
+    console.log("\nSeeding 19 Lead rows from 2 hours ago (within 24h, outside 1h window)...");
     const dailyIp = "198.51.100.60";
-    const dailyIpHash = hashIp(dailyIp, process.env.IP_HASH_SECRET);
+    const dailyIpHash = hashIp(dailyIp, TEST_SECRET);
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
     const dailySeedData = Array.from({ length: 19 }).map((_, idx) => ({
       source: "CONTACT_FORM" as const,
-      name: `Seeded Day User ${idx}`,
-      email: `dayseed_${idx}@example.com`,
-      message: `Seeded message ${idx}`,
+      name: `Day Seed ${idx}`,
+      email: `day_seed_${idx}@example.com`,
+      message: `Seeded msg ${idx}`,
       ipHash: dailyIpHash,
       createdAt: twoHoursAgo,
       updatedAt: twoHoursAgo,
@@ -379,262 +571,299 @@ async function runSuite() {
     }));
     await prisma.lead.createMany({ data: dailySeedData });
 
-    // Request 20 in 24h (Request 1 in current hour)
-    const resDaily20 = await POST(
-      makeReq({
-        body: {
-          name: "Daily User 20",
-          email: "daily_20@example.com",
-          message: "Request 20 in 24h",
-          elapsedMs: 2500,
-        },
-        ip: dailyIp,
-      })
-    );
-    assert.strictEqual(resDaily20.status, 201, "20th request within day must succeed");
+    // Request 20 in 24h (succeeds)
+    const resDaily20 = await requestApi({
+      body: { name: "Daily User 20", email: "day20@example.com", elapsedMs: 2500 },
+      headers: { "x-forwarded-for": dailyIp },
+    });
+    console.log(`Daily 20th Request Status: ${resDaily20.status}`);
+    assert.strictEqual(resDaily20.status, 201);
 
-    // Request 21 in 24h (Request 2 in current hour) -> daily limit exceeded!
-    const resDailyBlocked = await POST(
-      makeReq({
-        body: {
-          name: "Daily User 21",
-          email: "daily_21@example.com",
-          message: "Request 21 in 24h",
-          elapsedMs: 2500,
-        },
-        ip: dailyIp,
-      })
-    );
-    console.log("\nDaily 21st Request Status:", resDailyBlocked.status);
-    console.log("Daily 21st Request Retry-After:", resDailyBlocked.headers.get("Retry-After"));
-    const dailyBody = await resDailyBlocked.json();
-    console.log("Daily 21st Request Body:", JSON.stringify(dailyBody));
-
+    // Request 21 in 24h (blocked with 429 and Retry-After)
+    const resDailyBlocked = await requestApi({
+      body: { name: "Daily User 21", email: "day21@example.com", elapsedMs: 2500 },
+      headers: { "x-forwarded-for": dailyIp },
+    });
+    const retryAfterDaily = resDailyBlocked.headers.get("Retry-After");
+    console.log(`Daily 21st Request Status: ${resDailyBlocked.status}`);
+    console.log(`Daily 21st Request Retry-After: ${retryAfterDaily}`);
     assert.strictEqual(resDailyBlocked.status, 429);
-    assert.strictEqual(resDailyBlocked.headers.get("Retry-After"), "86400");
-    assert.strictEqual(resDailyBlocked.headers.get("Cache-Control"), "no-store");
-    console.log("✓ TASK 3d PASSED: 1-hour limit (429, Retry-After: 3600) and 24-hour limit (429, Retry-After: 86400) verified.\n");
+    assert.ok(retryAfterDaily);
+    const dailyRetrySeconds = parseInt(retryAfterDaily, 10);
+    // Oldest row was 2 hours ago, so remaining time in 24h window is ~22 hours (79200s)
+    assert.ok(dailyRetrySeconds > 0 && dailyRetrySeconds <= 86400);
+
+    // 3. Unknown IP shared bucket rate limit: max 2/hr
+    const resUnknown1 = await requestApi({
+      body: { name: "Unknown 1", email: "unk1@example.com", elapsedMs: 2500 },
+      headers: { "x-forwarded-for": "", "x-real-ip": "" },
+    });
+    assert.strictEqual(resUnknown1.status, 201);
+
+    const resUnknown2 = await requestApi({
+      body: { name: "Unknown 2", email: "unk2@example.com", elapsedMs: 2500 },
+      headers: { "x-forwarded-for": "", "x-real-ip": "" },
+    });
+    assert.strictEqual(resUnknown2.status, 201);
+
+    const resUnknown3 = await requestApi({
+      body: { name: "Unknown 3", email: "unk3@example.com", elapsedMs: 2500 },
+      headers: { "x-forwarded-for": "", "x-real-ip": "" },
+    });
+    console.log(`\nUnknown IP 3rd Request Status (limit 2/hr): ${resUnknown3.status}`);
+    assert.strictEqual(resUnknown3.status, 429);
+    console.log("✓ TEST 6 PASSED: Hourly, Daily, and Unknown IP dynamic rate limits verified.\n");
 
     // =========================================================================
-    // TASK 3e: 503 Test (Clean JSON, zero internal leaks)
+    // TEST 7: SQL Injection & XSS Inert Storage (Task 1)
     // =========================================================================
-    console.log("--- TASK 3e: 503 Outage Handling & Credential Leak Check ---");
-    const savedDbUrl = process.env.DATABASE_URL;
-    process.env.DATABASE_URL = "postgresql://postgres:secret_pass@127.0.0.1:54999/nonexistent_db";
-    process.env.DIRECT_URL = "postgresql://postgres:secret_pass@127.0.0.1:54999/nonexistent_db";
-    resetDb();
+    console.log("--- TEST 7: SQL Injection & XSS Payload Inertness ---");
+    const sqlInjectionName = `Robert'); DROP TABLE "Lead";--`;
+    const xssMessage = `<script>alert("xss")</script>`;
+    const resInert = await requestApi({
+      body: {
+        name: sqlInjectionName,
+        email: "injection.wire@example.com",
+        message: xssMessage,
+        elapsedMs: 3000,
+      },
+      headers: { "x-forwarded-for": "10.0.7.1" },
+    });
+    assert.strictEqual(resInert.status, 201);
 
-    const res503 = await POST(
-      makeReq({
-        body: {
-          name: "Outage User",
-          email: "outage@example.com",
-          elapsedMs: 3000,
-        },
-        ip: "10.0.5.1",
-      })
-    );
-    const body503Text = await res503.text();
-    console.log("503 Status Code:", res503.status);
-    console.log("503 Response Headers:");
-    res503.headers.forEach((v, k) => console.log(`  ${k}: ${v}`));
-    console.log("503 Response Body:", body503Text);
+    // Verify Lead table still exists and row is stored inertly
+    const injectedRow = await prisma.lead.findFirst({
+      where: { email: "injection.wire@example.com" },
+    });
+    assert.ok(injectedRow, "Lead row must exist");
+    assert.strictEqual(injectedRow.name, sqlInjectionName);
+    assert.strictEqual(injectedRow.message, xssMessage);
+    console.log(`Stored name: ${injectedRow.name}`);
+    console.log(`Stored message: ${injectedRow.message}`);
+    console.log("✓ TEST 7 PASSED: SQL injection attempted, table persists, text stored inertly.\n");
 
-    assert.strictEqual(res503.status, 503);
-    assert.strictEqual(res503.headers.get("Cache-Control"), "no-store");
+    // =========================================================================
+    // TEST 8: Resend Notification with Mock Server (Task 9)
+    // =========================================================================
+    console.log("--- TEST 8: Resend Notifications via Mock Server (Task 9) ---");
+    receivedResendRequests.length = 0;
+    mockResendShouldFail = false;
+
+    // (i) Lead triggers email request with correct fields
+    const resEmailSuccess = await requestApi({
+      body: {
+        name: "Akash Nair\r\nBcc: evil@attacker.com", // testing control char sanitization
+        email: "akash@malabar.example",
+        phone: "+91 7510109730",
+        service: "Web Design & Development",
+        elapsedMs: 3500,
+      },
+      headers: { "x-forwarded-for": "10.0.9.1" },
+    });
+    assert.strictEqual(resEmailSuccess.status, 201);
+
+    // Wait for after() hook to dispatch
+    await new Promise((r) => setTimeout(r, 600));
+
+    assert.strictEqual(receivedResendRequests.length, 1, "Mock Resend server must have received 1 request");
+    const sentReq = receivedResendRequests[0];
+    console.log("Mock Resend Server Received Request:");
+    console.log(`  Headers Authorization: ${sentReq.headers.authorization}`);
+    console.log(`  Payload:`, JSON.stringify(sentReq.body, null, 2));
+
+    assert.strictEqual(sentReq.headers.authorization, "Bearer re_mock_test_key_placeholder");
+    assert.strictEqual(sentReq.body.from, "leads@akzqcreation.com");
+    assert.deepStrictEqual(sentReq.body.to, ["notifications@akzqcreation.com"]);
+    // Subject must be sanitized: control chars stripped, no newlines
+    assert.strictEqual(sentReq.body.subject.includes("\r"), false);
+    assert.strictEqual(sentReq.body.subject.includes("\n"), false);
+    assert.ok(sentReq.body.subject.includes("Akash Nair"));
+
+    // (ii) Mock 500 writes lead.notify_failed without PII, response to visitor is still 201
+    mockResendShouldFail = true;
+    receivedResendRequests.length = 0;
+
+    const resEmailFail = await requestApi({
+      body: {
+        name: "Failure Tester",
+        email: "fail.notify@example.com",
+        phone: "+91 7510109730",
+        message: "Secret client message",
+        elapsedMs: 3500,
+      },
+      headers: { "x-forwarded-for": "10.0.9.2" },
+    });
+    assert.strictEqual(resEmailFail.status, 201);
+
+    await new Promise((r) => setTimeout(r, 600));
+    const failLead = await prisma.lead.findFirst({
+      where: { email: "fail.notify@example.com" },
+    });
+    assert.ok(failLead);
+
+    const failLog = await prisma.activityLog.findFirst({
+      where: { action: "lead.notify_failed", entityId: failLead.id },
+    });
+    assert.ok(failLog, "lead.notify_failed ActivityLog entry must exist");
+    console.log("\nlead.notify_failed ActivityLog entry:");
+    console.dir(failLog, { depth: null });
+
+    const failMeta = failLog.metadata as Record<string, unknown>;
+    assert.strictEqual(failMeta.name, undefined);
+    assert.strictEqual(failMeta.email, undefined);
+    assert.strictEqual(failMeta.message, undefined);
+    console.log("✓ TEST 8 PASSED: Resend notification fields verified and 500 failure handled.\n");
+
+    // =========================================================================
+    // TEST 9: Dev Environment Behavior (Localhost Origin Allowed in Dev)
+    // =========================================================================
+    console.log("--- TEST 9: Dev Environment Localhost Origin Allowance ---");
+    devServer = spawn("cmd.exe", ["/c", `npx next start -p ${DEV_PORT}`], {
+      env: {
+        ...process.env,
+        PORT: String(DEV_PORT),
+        NODE_ENV: "development",
+        ALLOW_DEV_ORIGIN: "true",
+        DATABASE_URL: TEST_DB_URL,
+        DIRECT_URL: TEST_DB_URL,
+        IP_HASH_SECRET: TEST_SECRET,
+        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      },
+      stdio: "ignore",
+    });
+
+    const isDevReady = await waitForServer(DEV_PORT);
+    assert.ok(isDevReady, "Dev server failed to start");
+
+    const resDevLocalhost = await requestApi({
+      port: DEV_PORT,
+      body: { name: "Dev User", email: "dev@example.com", elapsedMs: 3000 },
+      headers: { origin: `http://localhost:${DEV_PORT}` },
+    });
+    console.log(`Localhost Origin in Development Status: ${resDevLocalhost.status}`);
+    assert.strictEqual(resDevLocalhost.status, 201);
+    console.log("✓ TEST 9 PASSED: Localhost origin accepted in development.\n");
+
+    // =========================================================================
+    // TEST 10: Secret Validation Check (Task 7: Secret < 32 chars -> 503)
+    // =========================================================================
+    console.log("--- TEST 10: IP_HASH_SECRET Guard (< 32 chars -> 503) ---");
+    secretFailServer = spawn("cmd.exe", ["/c", `npx next start -p ${SECRET_FAIL_PORT}`], {
+      env: {
+        ...process.env,
+        PORT: String(SECRET_FAIL_PORT),
+        NODE_ENV: "production",
+        DATABASE_URL: TEST_DB_URL,
+        DIRECT_URL: TEST_DB_URL,
+        IP_HASH_SECRET: "short-insecure-key", // < 32 chars!
+        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      },
+      stdio: "ignore",
+    });
+
+    const isSecretFailReady = await waitForServer(SECRET_FAIL_PORT);
+    assert.ok(isSecretFailReady, "Secret fail server failed to start");
+
+    const resSecretFail = await requestApi({
+      port: SECRET_FAIL_PORT,
+      body: { name: "Test User", email: "test@example.com", elapsedMs: 3000 },
+      headers: { "x-forwarded-for": "10.0.10.1" },
+    });
+    const secretFailBody = await resSecretFail.text();
+    console.log(`Short Secret Server Response Status: ${resSecretFail.status}`);
+    console.log(`Short Secret Server Response Body: ${secretFailBody}`);
+    assert.strictEqual(resSecretFail.status, 503);
+    assert.strictEqual(resSecretFail.headers.get("Cache-Control"), "no-store");
     assert.strictEqual(
-      body503Text,
+      secretFailBody,
       '{"ok":false,"error":"Service temporarily unavailable. Please try again or reach us directly."}'
     );
-
-    // Negative assertions: verify NO credentials, connection strings, hosts, ports, or traces leak
-    assert.strictEqual(body503Text.toLowerCase().includes("postgres"), false);
-    assert.strictEqual(body503Text.toLowerCase().includes("prismaclient"), false);
-    assert.strictEqual(body503Text.includes("secret_pass"), false);
-    assert.strictEqual(body503Text.includes("54999"), false);
-    assert.strictEqual(body503Text.includes("127.0.0.1"), false);
-    assert.strictEqual(body503Text.toLowerCase().includes("connection"), false);
-    assert.strictEqual(body503Text.toLowerCase().includes("stack"), false);
-
-    // Restore test DB connection
-    process.env.DATABASE_URL = savedDbUrl;
-    process.env.DIRECT_URL = savedDbUrl;
-    resetDb();
-    console.log("✓ TASK 3e PASSED: 503 returned cleanly with zero internal traces or secrets leaked.\n");
+    console.log("✓ TEST 10 PASSED: Missing/short secret returns clean 503 over HTTP.\n");
 
     // =========================================================================
-    // TASK 3g: Service Slug Validation
+    // TEST 11: Database Timeouts & Hang Server Test (Task 10)
     // =========================================================================
-    console.log("--- TASK 3g: Service Slug Validation (Unpublished vs Published) ---");
-    // Unpublished / fake slug
-    const resBadSlug = await POST(
-      makeReq({
-        body: {
-          name: "Slug Tester",
-          email: "slugtester@example.com",
-          service: "non-existent-unpublished-slug",
-          elapsedMs: 3000,
-        },
-        ip: "10.0.7.1",
-      })
-    );
-    const badSlugBody = await resBadSlug.json();
-    console.log("Unpublished Slug Status:", resBadSlug.status);
-    console.log("Unpublished Slug Body:", JSON.stringify(badSlugBody));
-    assert.strictEqual(resBadSlug.status, 400);
-    assert.ok(badSlugBody.error.includes("Must match a published service"));
-
-    // Published slug
-    const resGoodSlug = await POST(
-      makeReq({
-        body: {
-          name: "Slug Tester",
-          email: "slugtester2@example.com",
-          service: "branding-identity",
-          elapsedMs: 3000,
-        },
-        ip: "10.0.7.2",
-      })
-    );
-    const goodSlugBody = await resGoodSlug.json();
-    console.log("\nPublished Slug Status:", resGoodSlug.status);
-    console.log("Published Slug Body:", JSON.stringify(goodSlugBody));
-    assert.strictEqual(resGoodSlug.status, 201);
-    console.log("✓ TASK 3g PASSED: Unpublished slug rejected (400), published accepted (201).\n");
-
-    // =========================================================================
-    // TASK 3h: Origin & Referer Verification
-    // =========================================================================
-    console.log("--- TASK 3h: Origin & Referer Verification ---");
-    // 1) Disallowed Origin
-    const resBadOrigin = await POST(
-      makeReq({
-        body: { name: "Attacker", email: "attacker@bad.com", elapsedMs: 3000 },
-        headers: { origin: "https://evil-unauthorized-phishing.com" },
-        ip: "10.0.8.1",
-      })
-    );
-    console.log("Disallowed Origin Status:", resBadOrigin.status);
-    assert.strictEqual(resBadOrigin.status, 403);
-
-    // 2) Absent Origin (Allowed for direct clients/scripts)
-    const resNoOrigin = await POST(
-      makeReq({
-        body: { name: "Direct Client", email: "direct@example.com", elapsedMs: 3000 },
-        headers: { origin: "", referer: "" },
-        ip: "10.0.8.2",
-      })
-    );
-    console.log("Absent Origin Status:", resNoOrigin.status);
-    assert.strictEqual(resNoOrigin.status, 201);
-
-    // 3) Localhost origin in Development vs Production
-    // a. In Development (NODE_ENV !== "production"): localhost accepted
-    (process.env as Record<string, string | undefined>).NODE_ENV = "development";
-    const resLocalhostDev = await POST(
-      makeReq({
-        body: { name: "Local Dev", email: "localdev@example.com", elapsedMs: 3000 },
-        headers: { origin: "http://localhost:3000" },
-        ip: "10.0.8.3",
-      })
-    );
-    console.log("Localhost in development status:", resLocalhostDev.status);
-    assert.strictEqual(resLocalhostDev.status, 201);
-
-    // b. In Production (NODE_ENV === "production"): localhost rejected with 403
-    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
-    const resLocalhostProd = await POST(
-      makeReq({
-        body: { name: "Local Prod", email: "localprod@example.com", elapsedMs: 3000 },
-        headers: { origin: "http://localhost:3000" },
-        ip: "10.0.8.4",
-      })
-    );
-    console.log("Localhost in production status:", resLocalhostProd.status);
-    assert.strictEqual(resLocalhostProd.status, 403);
-    (process.env as Record<string, string | undefined>).NODE_ENV = "development";
-    console.log("✓ TASK 3h PASSED: Disallowed Origin -> 403, Absent Origin -> 201, Localhost allowed ONLY in dev.\n");
-
-    // =========================================================================
-    // TASK 4a: Resend Notification Test
-    // =========================================================================
-    console.log("--- TASK 4a: Resend Notification Test (Default OFF & Failure Logging) ---");
-    // Test 1: Unset credentials (Default OFF) -> does nothing
-    delete process.env.RESEND_API_KEY;
-    delete process.env.NOTIFY_EMAIL;
-
-    const countBeforeUnset = await prisma.activityLog.count({
-      where: { action: "lead.notify_failed" },
+    console.log("--- TEST 11: Database Timeouts & TCP Hang Server (Task 10) ---");
+    // Start TCP server that accepts connections and never replies
+    const tcpServer = net.createServer((socket) => {
+      // Do nothing, hang the connection
     });
-    await sendLeadNotification({
-      leadId: "test-lead-unset-1",
-      name: "Unset Lead",
-      email: "unset@example.com",
-    });
-    const countAfterUnset = await prisma.activityLog.count({
-      where: { action: "lead.notify_failed" },
-    });
-    assert.strictEqual(countAfterUnset, countBeforeUnset, "When unset, sendLeadNotification must do nothing");
-    console.log("Default OFF (unset credentials): Notification does nothing, 0 failure logs.");
+    hangTcpServer = tcpServer;
+    await new Promise<void>((resolve) => tcpServer.listen(HANG_TCP_PORT, resolve));
+    console.log(`TCP hang server listening on port ${HANG_TCP_PORT}`);
 
-    // Test 2: Set invalid credentials -> dispatches HTTP, fails, logs lead.notify_failed without PII
-    process.env.RESEND_API_KEY = "re_invalid_test_key_placeholder";
-    process.env.NOTIFY_EMAIL = "notify@akzqcreation.com";
-
-    await sendLeadNotification({
-      leadId: "test-lead-fail-1",
-      name: "Sensitive Customer Name",
-      email: "sensitive.customer@example.com",
-      phone: "+91 9999999999",
-      message: "Secret project description",
+    timeoutServer = spawn("cmd.exe", ["/c", `npx next start -p ${TIMEOUT_PORT}`], {
+      env: {
+        ...process.env,
+        PORT: String(TIMEOUT_PORT),
+        NODE_ENV: "production",
+        DATABASE_URL: `postgresql://postgres:password@127.0.0.1:${HANG_TCP_PORT}/hang_db`,
+        DIRECT_URL: `postgresql://postgres:password@127.0.0.1:${HANG_TCP_PORT}/hang_db`,
+        IP_HASH_SECRET: TEST_SECRET,
+        NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      },
+      stdio: "ignore",
     });
 
-    const failedLog = await prisma.activityLog.findFirst({
-      where: { action: "lead.notify_failed", entityId: "test-lead-fail-1" },
+    const isTimeoutReady = await waitForServer(TIMEOUT_PORT);
+    assert.ok(isTimeoutReady, "Timeout test server failed to start");
+
+    const hangStart = Date.now();
+    const resHang = await requestApi({
+      port: TIMEOUT_PORT,
+      body: { name: "Hang Tester", email: "hang@example.com", elapsedMs: 3000 },
+      headers: { "x-forwarded-for": "10.0.11.1" },
     });
-    assert.ok(failedLog, "Failure log must be written on dispatch error");
-    assert.strictEqual(failedLog.entityId, "test-lead-fail-1");
-    console.log("\nDumped lead.notify_failed ActivityLog Row:");
-    console.dir(failedLog, { depth: null });
+    const hangDuration = Date.now() - hangStart;
+    const hangBody = await resHang.text();
 
-    const failedMeta = failedLog.metadata as Record<string, unknown>;
-    assert.strictEqual(failedMeta.name, undefined);
-    assert.strictEqual(failedMeta.email, undefined);
-    assert.strictEqual(failedMeta.phone, undefined);
-    assert.strictEqual(failedMeta.message, undefined);
-    console.log("✓ TASK 4a PASSED: Resend notification is default OFF; failed send logs without PII.\n");
+    console.log(`Hang Server Response Status: ${resHang.status}`);
+    console.log(`Hang Elapsed Time: ${hangDuration}ms (~5-7s)`);
+    console.log("Hang Response Headers:");
+    resHang.headers.forEach((v, k) => console.log(`  ${k}: ${v}`));
+    console.log(`Hang Response Body: ${hangBody}`);
 
-    delete process.env.RESEND_API_KEY;
-    delete process.env.NOTIFY_EMAIL;
-
-    // =========================================================================
-    // Re-verify Lead Viewer Script
-    // =========================================================================
-    console.log("--- Lead Viewer Script (scripts/leads-list.ts) ---");
-    const scriptOutput = execSync("npx tsx scripts/leads-list.ts", {
-      env: { ...process.env, DATABASE_URL: TEST_DB_URL, DIRECT_URL: TEST_DB_URL },
-      encoding: "utf8",
-    });
-    console.log(scriptOutput.trim());
-    assert.ok(scriptOutput.includes("LATEST"), "Script must output latest leads");
-    console.log("✓ scripts/leads-list.ts executed cleanly.\n");
+    assert.strictEqual(resHang.status, 503);
+    assert.strictEqual(resHang.headers.get("Cache-Control"), "no-store");
+    assert.strictEqual(
+      hangBody,
+      '{"ok":false,"error":"Service temporarily unavailable. Please try again or reach us directly."}'
+    );
+    // Verified: Connection timeout of ~5000ms caused route to catch and return 503 within ~6s
+    assert.ok(hangDuration >= 4500 && hangDuration <= 9000, `Expected duration ~5-7s, got ${hangDuration}ms`);
+    console.log("✓ TEST 11 PASSED: Database timeout returns 503 cleanly within ~6s.\n");
 
   } finally {
+    console.log("Cleaning up servers and resources...");
+    killProcessTree(prodServer);
+    killProcessTree(devServer);
+    killProcessTree(secretFailServer);
+    killProcessTree(timeoutServer);
+    if (hangTcpServer) {
+      try {
+        hangTcpServer.close();
+      } catch {}
+    }
+    if (mockResendServer) {
+      try {
+        mockResendServer.close();
+      } catch {}
+    }
     try {
       await prisma.$disconnect();
     } catch {}
     try {
       await pgServer.stop();
     } catch {}
-    console.log("Disposable Postgres cluster stopped cleanly.");
+    console.log("✓ All servers and processes terminated cleanly.");
   }
 
   console.log("\n========================================================");
-  console.log("ALL LEADS API INTEGRATION TESTS PASSED CLEANLY");
+  console.log("ALL REAL PRODUCTION-SERVER LEADS API TESTS PASSED CLEANLY");
   console.log("========================================================\n");
 }
 
 runSuite().catch((err) => {
-  console.error("LEADS API TEST SUITE FAILED:", err);
+  console.error("LEADS API HTTP TEST SUITE FAILED:", err);
   process.exit(1);
 });

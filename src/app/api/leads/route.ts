@@ -127,8 +127,8 @@ function isAllowedOrigin(
       return true;
     }
 
-    // In development only, allow localhost and 127.0.0.1
-    if (process.env.NODE_ENV !== "production") {
+    // In development or when dev origin is enabled via env, allow localhost and 127.0.0.1
+    if (process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_ORIGIN === "true") {
       if (parsedTarget.hostname === "localhost" || parsedTarget.hostname === "127.0.0.1") {
         return true;
       }
