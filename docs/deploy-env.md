@@ -49,26 +49,46 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 
 ---
 
-## 3. Database Migration & Deployment Workflow
+## 3. Production Deployment Step-by-Step Sequence (Vercel + Neon)
 
-1. **Deploy Migrations to Target Database**:
-   ```bash
-   npx prisma migrate deploy
-   ```
+Follow this strict deployment order:
 
-2. **Seed Initial Reference Data (Idempotent)**:
-   ```bash
-   npm run db:seed
-   ```
+1. **Step 1: Create Neon Project**
+   - Create a Postgres project in Neon.
+   - Note the connection strings:
+     - Pooled connection (`DATABASE_URL`) with `?sslmode=require`
+     - Direct non-pooled connection (`DIRECT_URL`) with `?sslmode=require`
 
-3. **Inspect Leads Securely via CLI**:
-   ```bash
-   npm run leads:list
-   ```
+2. **Step 2: Run Database Migrations from Trusted Machine**
+   - Deploy all migrations to the target database:
+     ```bash
+     npx prisma migrate deploy
+     ```
 
-4. **Run Health & Parity Suite**:
-   ```bash
-   npm run test:leads
-   node tests/text-parity-diff.mjs
-   node tests/parity-test.mjs
-   ```
+3. **Step 3: Seed Reference Content (Idempotent)**
+   - Populate canonical services, portfolio, blog post, and FAQ records:
+     ```bash
+     npm run db:seed
+     ```
+
+4. **Step 4: Configure Environment Variables in Vercel**
+   - Set the following in Vercel Project Settings > Environment Variables:
+     - `DATABASE_URL` (pooled connection string)
+     - `DIRECT_URL` (direct unpooled connection string)
+     - `IP_HASH_SECRET` (generate using `openssl rand -hex 32`)
+     - `NEXT_PUBLIC_SITE_URL` (`https://akzqcreation.com`)
+     - *(Optional)* `RESEND_API_KEY` (if email notifications enabled)
+     - *(Optional)* `NOTIFY_EMAIL` (recipient email)
+     - *(Optional)* `RESEND_FROM_EMAIL` (verified sender email)
+
+5. **Step 5: Deploy Application to Vercel**
+   - Trigger production deployment (`git push origin main` or via Vercel CLI).
+   - Build completes with zero DB queries during build time (`next build --webpack`).
+
+6. **Step 6: Verify Deployment Parity & Functionality**
+   - Run health, security, and parity checks:
+     ```bash
+     npm run test:leads
+     node tests/text-parity-diff.mjs
+     node tests/parity-test.mjs
+     ```
