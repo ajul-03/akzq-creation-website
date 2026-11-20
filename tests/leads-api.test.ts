@@ -211,7 +211,7 @@ async function runSuite() {
     });
     fs.writeFileSync("./.test-valid-payload.json", validJsonPayload);
     const curlValidOutput = execSync(
-      `curl.exe -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" --data-binary @./.test-valid-payload.json`,
+      `curl -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" --data-binary @./.test-valid-payload.json`,
       { encoding: "utf8" }
     );
     console.log(curlValidOutput.trim());
@@ -228,14 +228,14 @@ async function runSuite() {
     });
     fs.writeFileSync("./.test-large-payload.json", largePayload);
     const curl413Output = execSync(
-      `curl.exe -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" --data-binary @./.test-large-payload.json`,
+      `curl -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" --data-binary @./.test-large-payload.json`,
       { encoding: "utf8" }
     );
     console.log(curl413Output.trim());
 
     console.log("\n[CURL 3: Payload Too Large 413 (>10KB sent chunked without Content-Length)]");
     const curlChunked413Output = execSync(
-      `curl.exe -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" -H "Transfer-Encoding: chunked" --data-binary @./.test-large-payload.json`,
+      `curl -i -s -X POST http://127.0.0.1:${PROD_PORT}/api/leads -H "Content-Type: application/json" -H "Origin: https://akzqcreation.com" -H "Transfer-Encoding: chunked" --data-binary @./.test-large-payload.json`,
       { encoding: "utf8" }
     );
     console.log(curlChunked413Output.trim());
