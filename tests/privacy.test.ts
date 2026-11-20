@@ -43,7 +43,7 @@ const savedEnv = process.env.IP_HASH_SECRET;
 delete process.env.IP_HASH_SECRET;
 assert.throws(
   () => hashIp(ip1),
-  /IP_HASH_SECRET is missing or under 32 characters/,
+  /IP_HASH_SECRET is missing, under 32 characters, or using placeholder/,
   "Must throw if secret is missing"
 );
 console.log("  ✓ PASSED");
@@ -52,8 +52,17 @@ console.log("  ✓ PASSED");
 console.log("TEST 7: Short secret rejection (throws if secret is under 32 characters)");
 assert.throws(
   () => hashIp(ip1, "too-short-key"),
-  /IP_HASH_SECRET is missing or under 32 characters/,
+  /IP_HASH_SECRET is missing, under 32 characters, or using placeholder/,
   "Must throw if secret is under 32 chars"
+);
+console.log("  ✓ PASSED");
+
+// Test 8: Placeholder secret ("replace-with...") throws
+console.log("TEST 8: Placeholder secret rejection (throws if secret begins with 'replace-with')");
+assert.throws(
+  () => hashIp(ip1, "replace-with-secure-random-secret-for-ip-hashing"),
+  /IP_HASH_SECRET is missing, under 32 characters, or using placeholder/,
+  "Must throw if secret begins with replace-with"
 );
 console.log("  ✓ PASSED");
 
@@ -61,4 +70,4 @@ if (savedEnv) {
   process.env.IP_HASH_SECRET = savedEnv;
 }
 
-console.log("\n✓ All 7 IP hashing privacy tests PASSED cleanly.\n");
+console.log("\n✓ All 8 IP hashing privacy tests PASSED cleanly.\n");

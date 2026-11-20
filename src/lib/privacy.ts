@@ -7,8 +7,8 @@ import crypto from "crypto";
  */
 export function hashIp(ip: string, secret?: string): string {
   const hmacSecret = secret || process.env.IP_HASH_SECRET;
-  if (!hmacSecret || hmacSecret.length < 32) {
-    throw new Error("IP_HASH_SECRET is missing or under 32 characters");
+  if (!hmacSecret || hmacSecret.length < 32 || hmacSecret.startsWith("replace-with")) {
+    throw new Error("IP_HASH_SECRET is missing, under 32 characters, or using placeholder");
   }
   return crypto.createHmac("sha256", hmacSecret).update(ip.trim()).digest("hex");
 }

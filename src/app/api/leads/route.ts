@@ -12,84 +12,107 @@ const noStoreHeaders = {
   "Cache-Control": "no-store",
 };
 
+const noControlChars = (val?: string | null) =>
+  !val || !/[\x00-\x1F\x7F]/.test(val);
+
 const LeadInputSchema = z.object({
   name: z
     .string()
     .trim()
     .min(2, "Name must be at least 2 characters")
-    .max(100, "Name cannot exceed 100 characters"),
+    .max(100, "Name cannot exceed 100 characters")
+    .refine(noControlChars, { message: "Control characters are not allowed" }),
   email: z
     .string()
     .trim()
     .email("Invalid email address")
     .max(254, "Email cannot exceed 254 characters")
-    .toLowerCase(),
+    .toLowerCase()
+    .refine(noControlChars, { message: "Control characters are not allowed" }),
   phone: z
     .string()
     .trim()
     .regex(/^[+0-9\s\-()]+$/, "Invalid phone format")
     .min(7, "Phone number is too short")
     .max(20, "Phone number is too long")
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   company: z
     .string()
     .trim()
     .max(120, "Company name cannot exceed 120 characters")
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   service: z
     .string()
     .trim()
     .max(100)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   budgetRange: z
     .string()
     .trim()
     .max(50)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   message: z
     .string()
     .trim()
     .max(2000, "Message cannot exceed 2000 characters")
+    .transform((val) =>
+      val
+        ? val
+            .replace(/\r\n/g, "\n")
+            .replace(/\r/g, "\n")
+            .replace(/[\x00-\x09\x0B-\x1F\x7F]/g, "")
+        : val
+    )
     .nullable()
     .optional(),
   utmSource: z
     .string()
     .trim()
     .max(200)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   utmMedium: z
     .string()
     .trim()
     .max(200)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   utmCampaign: z
     .string()
     .trim()
     .max(200)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   utmTerm: z
     .string()
     .trim()
     .max(200)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   utmContent: z
     .string()
     .trim()
     .max(200)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   referrer: z
     .string()
     .trim()
     .max(500)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
   hp_field: z.string().optional(),
@@ -123,21 +146,55 @@ function isAllowedOrigin(
       }
     }
 
-    if (allowedSet.has(targetOrigin)) {
-      return true;
-    }
-
-    // In development or when dev origin is enabled via env, allow localhost and 127.0.0.1
-    if (process.env.NODE_ENV !== "production" || process.env.ALLOW_DEV_ORIGIN === "true") {
-      if (parsedTarget.hostname === "localhost" || parsedTarget.hostname === "127.0.0.1") {
-        return true;
-      }
-    }
-
-    return false;
+    return allowedSet.has(targetOrigin);
   } catch {
     return false;
   }
+}
+
+async function readBodyWithLimit(
+  request: NextRequest,
+  maxBytes: number
+): Promise<{ body: string; exceeded: boolean }> {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+    return { body: "", exceeded: true };
+  }
+
+  if (!request.body) {
+    const text = await request.text();
+    return { body: text, exceeded: text.length > maxBytes };
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        totalBytes += value.length;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          return { body: "", exceeded: true };
+        }
+        chunks.push(value);
+      }
+    }
+  } catch {
+    return { body: "", exceeded: true };
+  }
+
+  const concatenated = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    concatenated.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return { body: new TextDecoder().decode(concatenated), exceeded: false };
 }
 
 function mapBudgetRange(
@@ -180,18 +237,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3. Rejection: Body > 10KB (413)
-  let rawBody: string;
-  try {
-    rawBody = await request.text();
-  } catch {
-    return NextResponse.json(
-      { ok: false, error: "Unable to read request payload" },
-      { status: 400, headers: noStoreHeaders }
-    );
-  }
-
-  if (rawBody.length > 10 * 1024) {
+  // 3. Rejection: Body > 10KB (413) with stream reader cap
+  const { body: rawBody, exceeded } = await readBodyWithLimit(request, 10 * 1024);
+  if (exceeded) {
     return NextResponse.json(
       { ok: false, error: "Payload Too Large: body exceeds 10KB" },
       { status: 413, headers: noStoreHeaders }
@@ -240,10 +288,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 8. Runtime Secret Validation: IP_HASH_SECRET must be set and >= 32 chars
+  // 8. Runtime Secret Validation: IP_HASH_SECRET must be set and >= 32 chars, not starting with "replace-with"
   const secret = process.env.IP_HASH_SECRET;
-  if (!secret || secret.length < 32) {
-    console.error("Configuration error: IP_HASH_SECRET is missing or under 32 characters");
+  if (!secret || secret.length < 32 || secret.startsWith("replace-with")) {
+    console.error("Configuration error: IP_HASH_SECRET is missing, under 32 characters, or using placeholder");
     return NextResponse.json(
       {
         ok: false,
@@ -403,7 +451,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fallback extraction for UTMs and Referrer
+    // Fallback extraction for UTMs and Referrer (origin+pathname only, strip query/hash, null if empty)
     const requestUrl = new URL(request.url);
     const utmSource =
       payload.utmSource || requestUrl.searchParams.get("utm_source") || null;
@@ -411,8 +459,16 @@ export async function POST(request: NextRequest) {
       payload.utmMedium || requestUrl.searchParams.get("utm_medium") || null;
     const utmCampaign =
       payload.utmCampaign || requestUrl.searchParams.get("utm_campaign") || null;
-    const resolvedReferrer =
-      payload.referrer || request.headers.get("referer") || null;
+
+    let sanitizedReferrer: string | null = null;
+    if (payload.referrer && payload.referrer.trim().length > 0) {
+      try {
+        const refUrl = new URL(payload.referrer.trim());
+        sanitizedReferrer = `${refUrl.origin}${refUrl.pathname}`;
+      } catch {
+        sanitizedReferrer = null;
+      }
+    }
 
     const budgetRange = mapBudgetRange(payload.budgetRange);
     const userAgent = request.headers.get("user-agent")?.slice(0, 255) || null;
@@ -432,7 +488,7 @@ export async function POST(request: NextRequest) {
         utmSource: utmSource ? utmSource.slice(0, 200) : null,
         utmMedium: utmMedium ? utmMedium.slice(0, 200) : null,
         utmCampaign: utmCampaign ? utmCampaign.slice(0, 200) : null,
-        referrer: resolvedReferrer ? resolvedReferrer.slice(0, 500) : null,
+        referrer: sanitizedReferrer ? sanitizedReferrer.slice(0, 500) : null,
         ipHash,
         userAgent,
         consentGivenAt: new Date(),
