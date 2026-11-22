@@ -13,15 +13,17 @@ export interface LeadNotificationPayload {
 
 /**
  * Dispatches an optional lead notification email via Resend if credentials exist.
+ * Notifications are strictly enabled only when RESEND_API_KEY, LEAD_NOTIFICATION_TO,
+ * and LEAD_NOTIFICATION_FROM are all present.
  * Logs failures to ActivityLog under 'lead.notify_failed' with zero PII in metadata.
  */
 export async function sendLeadNotification(payload: LeadNotificationPayload): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  const notifyEmail = process.env.NOTIFY_EMAIL;
-  const fromEmail = process.env.RESEND_FROM_EMAIL;
+  const toEmail = process.env.LEAD_NOTIFICATION_TO;
+  const fromEmail = process.env.LEAD_NOTIFICATION_FROM;
 
   // If any required notification configuration is missing, keep notifications disabled
-  if (!apiKey || !notifyEmail || !fromEmail) {
+  if (!apiKey || !toEmail || !fromEmail) {
     return;
   }
 
@@ -55,7 +57,7 @@ export async function sendLeadNotification(payload: LeadNotificationPayload): Pr
       },
       body: JSON.stringify({
         from: fromEmail,
-        to: [notifyEmail],
+        to: [toEmail],
         subject: `New Lead: ${cleanName} (${cleanService})`,
         text: textBody,
       }),
