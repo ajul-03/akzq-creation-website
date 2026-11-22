@@ -1,4 +1,5 @@
 import assert from "node:assert";
+import fs from "node:fs";
 import { spawn, execSync } from "node:child_process";
 import http from "node:http";
 import pg from "pg";
@@ -224,27 +225,32 @@ async function runBrowserTest() {
     const generatedHref = await whatsAppBtnLocator.getAttribute("href");
     console.log("Generated WhatsApp href:\n" + generatedHref);
 
-    // Legacy format verification
-    const expectedPrefix = "https://wa.me/917510109730?text=";
-    assert.ok(generatedHref.startsWith(expectedPrefix), "Href must start with standard wa.me link");
+    // Extract legacy template from assets/js/contact.js
+    const contactJsContent = fs.readFileSync("assets/js/contact.js", "utf8");
+    const waTextMatch = contactJsContent.match(/const text = encodeURIComponent\(\s*`([^`]+)`\s*\);/);
+    assert.ok(waTextMatch, "WhatsApp text template must exist in assets/js/contact.js");
+    const legacyTemplate = waTextMatch[1];
+    console.log("Programmatically Extracted WhatsApp Text Template from assets/js/contact.js:");
+    console.log(`  "${legacyTemplate}"`);
 
-    const encodedText = generatedHref.slice(expectedPrefix.length);
-    const decodedText = decodeURIComponent(encodedText);
-    console.log("Decoded WhatsApp Message:\n" + decodedText);
+    const nameVal = "Naveen Kumar";
+    const serviceVal = "Branding & Identity";
+    const budgetVal = "Starter (₹15k \u2013 \u20B930k)";
+    const legacyCalculatedMessage = legacyTemplate
+      .replace("${name}", nameVal)
+      .replace("${service}", serviceVal)
+      .replace("${budget}", budgetVal);
+    const legacyExpectedHref = `https://wa.me/917510109730?text=${encodeURIComponent(legacyCalculatedMessage)}`;
 
-    // Legacy expected pattern from contact.js:
-    // `Hi AKZQ.Creation, I am ${name}. I requested a fixed-price quote for ${service}. (Budget Range: ${budget}). Let's discuss!`
-    const legacyExpectedMessage =
-      "Hi AKZQ.Creation, I am Naveen Kumar. I requested a fixed-price quote for Branding & Identity. (Budget Range: Starter (₹15k \u2013 \u20B930k)). Let's discuss!";
-    assert.strictEqual(
-      decodedText,
-      legacyExpectedMessage,
-      "WhatsApp message text must match legacy contact.js template byte-for-byte"
-    );
-    console.log("Legacy WhatsApp href Reference:");
-    console.log(`  https://wa.me/917510109730?text=${encodeURIComponent(legacyExpectedMessage)}`);
-    console.log("New Generated WhatsApp href:");
+    console.log("Legacy Calculated WhatsApp href (from assets/js/contact.js):");
+    console.log(`  ${legacyExpectedHref}`);
+    console.log("Browser-Rendered WhatsApp href:");
     console.log(`  ${generatedHref}`);
+    assert.strictEqual(
+      generatedHref,
+      legacyExpectedHref,
+      "WhatsApp message href must match legacy contact.js generated href byte-for-byte"
+    );
     console.log("✓ TASK 2d PASSED: WhatsApp message format matches legacy format byte-for-byte.\n");
 
     // Verify Lead row in Postgres database
@@ -295,6 +301,7 @@ async function runBrowserTest() {
 
     let modalVisible = await page.locator("#formSuccessModal").isVisible();
     assert.strictEqual(modalVisible, false, "Modal must NOT appear on 429");
+    console.log(`Assert: success modal is hidden on 429 -> ${!modalVisible}`);
 
     const fallback429 = page.locator("#formFallbackError");
     assert.strictEqual(await fallback429.isVisible(), true, "Fallback error must appear on 429");
@@ -303,12 +310,12 @@ async function runBrowserTest() {
     assert.ok(fallbackText429.includes("+91 75101 09730"));
     assert.ok(fallbackText429.includes("WhatsApp"));
 
-    const telLink = await fallback429.locator('a[href^="tel:"]').getAttribute("href");
-    const waLink = await fallback429.locator('a[href*="wa.me"]').getAttribute("href");
-    console.log(`Fallback tel link: ${telLink}`);
-    console.log(`Fallback wa link:  ${waLink}`);
-    assert.strictEqual(telLink, "tel:+917510109730");
-    assert.strictEqual(waLink, "https://wa.me/917510109730");
+    const telLink429 = await fallback429.locator('a[href^="tel:"]').getAttribute("href");
+    const waLink429 = await fallback429.locator('a[href*="wa.me"]').getAttribute("href");
+    console.log(`Fallback 429 tel href:   ${telLink429}`);
+    console.log(`Fallback 429 wa.me href: ${waLink429}`);
+    assert.strictEqual(telLink429, "tel:+917510109730");
+    assert.strictEqual(waLink429, "https://wa.me/917510109730");
     await page.unroute("**/api/leads");
 
     // 2. Force 503
@@ -327,10 +334,18 @@ async function runBrowserTest() {
 
     modalVisible = await page.locator("#formSuccessModal").isVisible();
     assert.strictEqual(modalVisible, false, "Modal must NOT appear on 503");
+    console.log(`Assert: success modal is hidden on 503 -> ${!modalVisible}`);
+
     const fallback503 = page.locator("#formFallbackError");
     assert.strictEqual(await fallback503.isVisible(), true);
     const fallbackText503 = await fallback503.innerText();
     console.log("Fallback Error Text on 503:\n" + fallbackText503);
+    const telLink503 = await fallback503.locator('a[href^="tel:"]').getAttribute("href");
+    const waLink503 = await fallback503.locator('a[href*="wa.me"]').getAttribute("href");
+    console.log(`Fallback 503 tel href:   ${telLink503}`);
+    console.log(`Fallback 503 wa.me href: ${waLink503}`);
+    assert.strictEqual(telLink503, "tel:+917510109730");
+    assert.strictEqual(waLink503, "https://wa.me/917510109730");
     console.log("✓ Fallback error displayed on 503; modal hidden.");
     await page.unroute("**/api/leads");
 
@@ -346,10 +361,18 @@ async function runBrowserTest() {
 
     modalVisible = await page.locator("#formSuccessModal").isVisible();
     assert.strictEqual(modalVisible, false, "Modal must NOT appear on network failure");
+    console.log(`Assert: success modal is hidden on offline -> ${!modalVisible}`);
+
     const fallbackOffline = page.locator("#formFallbackError");
     assert.strictEqual(await fallbackOffline.isVisible(), true);
     const fallbackTextOffline = await fallbackOffline.innerText();
     console.log("Fallback Error Text on Offline Failure:\n" + fallbackTextOffline);
+    const telLinkOffline = await fallbackOffline.locator('a[href^="tel:"]').getAttribute("href");
+    const waLinkOffline = await fallbackOffline.locator('a[href*="wa.me"]').getAttribute("href");
+    console.log(`Fallback offline tel href:   ${telLinkOffline}`);
+    console.log(`Fallback offline wa.me href: ${waLinkOffline}`);
+    assert.strictEqual(telLinkOffline, "tel:+917510109730");
+    assert.strictEqual(waLinkOffline, "https://wa.me/917510109730");
     console.log("✓ Fallback error displayed on network failure; modal hidden.");
     await page.unroute("**/api/leads");
     console.log("✓ TASK 2c PASSED: All failure cases hide modal and display fallback error with working links.\n");
@@ -358,9 +381,12 @@ async function runBrowserTest() {
     // TASK 4: Real Server 400 Field Errors (No Route Interception)
     // =========================================================================
     console.log("--- TASK 4: Real Server 400 Validation Errors (No Route Interception) ---");
-    // Quote legacy messages
-    const legacyJsAlert = "Please fill in your Name, Email, and select the Required Service.";
-    console.log(`Quoted Legacy JS Alert Message (assets/js/contact.js:30):`);
+    // Extract legacy validation alert from assets/js/contact.js programmatically
+    const contactJsAlert = fs.readFileSync("assets/js/contact.js", "utf8");
+    const alertMatch = contactJsAlert.match(/alert\(['"`](.*?)['"`]\)/);
+    assert.ok(alertMatch, "Failed to extract alert from assets/js/contact.js");
+    const legacyJsAlert = alertMatch[1];
+    console.log(`Programmatically Extracted Legacy JS Alert Message (assets/js/contact.js:30):`);
     console.log(`  "${legacyJsAlert}"`);
 
     // Fill valid form, then set invalid email and bypass client HTML5 validation via noValidate
@@ -383,8 +409,9 @@ async function runBrowserTest() {
     await emailErrorLocator.waitFor({ state: "visible", timeout: 5000 });
     const displayedEmailError = await emailErrorLocator.innerText();
 
-    console.log(`Legacy Validation Message:   "Please fill in your Email." (from "${legacyJsAlert}")`);
-    console.log(`Browser-Displayed Field Error: "${displayedEmailError}"`);
+    console.log(`Legacy Validation Message Source: "${legacyJsAlert}"`);
+    console.log(`Browser-Displayed Field Error:   "${displayedEmailError}"`);
+    assert.ok(legacyJsAlert.includes("Email"), "Legacy alert must mention Email");
     assert.strictEqual(displayedEmailError, "Please fill in your Email.");
     console.log("✓ TASK 4 PASSED: Real server 400 maps field to legacy validation message and ignores server strings.\n");
 
@@ -457,6 +484,17 @@ async function runBrowserTest() {
     assert.ok(directLead);
     assert.strictEqual(directLead.referrer, null);
     console.log("✓ TASK 1 PASSED: UTMs set, referrer stripped to origin+pathname, null on direct nav.\n");
+
+    // =========================================================================
+    // TASK 11: Fresh Lead Table Query Verification
+    // =========================================================================
+    console.log("--- TASK 11: Fresh Lead Table Rows Verification ---");
+    const freshLeadRows = await prisma.$queryRawUnsafe(
+      'SELECT id, "createdAt", "consentGivenAt" FROM "Lead" ORDER BY "createdAt"'
+    );
+    console.log('SELECT id, "createdAt", "consentGivenAt" FROM "Lead" ORDER BY "createdAt":');
+    console.table(freshLeadRows);
+    console.log("✓ TASK 11 PASSED: Lead table queried and printed.\n");
 
   } finally {
     console.log("Cleaning up browser test resources...");

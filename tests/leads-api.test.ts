@@ -139,6 +139,9 @@ async function runSuite() {
   let devServer: ChildProcess | null = null;
   let secretFailServer: ChildProcess | null = null;
   let timeoutServer: ChildProcess | null = null;
+  let missingToServer: ChildProcess | null = null;
+  let noResendServer: ChildProcess | null = null;
+  let connRefusedServer: ChildProcess | null = null;
   let hangTcpServer: net.Server | null = null;
 
   try {
@@ -157,8 +160,8 @@ async function runSuite() {
       NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
       ALLOWED_ORIGINS: "https://preview.akzqcreation.com",
       RESEND_API_KEY: "re_mock_test_key_placeholder",
-      NOTIFY_EMAIL: "notifications@akzqcreation.com",
-      RESEND_FROM_EMAIL: "leads@akzqcreation.com",
+      LEAD_NOTIFICATION_TO: "notifications@akzqcreation.com",
+      LEAD_NOTIFICATION_FROM: "leads@akzqcreation.com",
       RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
     });
 
@@ -255,6 +258,7 @@ async function runSuite() {
         email: "genuine@example.com",
         phone: "+91 7510109730",
         service: "branding-identity",
+        message: "Unique message for dedupe testing",
         elapsedMs: 4000,
       },
       headers: { "x-forwarded-for": "10.0.1.1" },
@@ -284,36 +288,41 @@ async function runSuite() {
     });
     const bodyFast = await resFast.text();
 
-    // 4. Deduplication (same email + same message within 10 min)
+    // 4. Deduplication (same email + same message within 10 min) with DB row-count check
+    const countBeforeDedupe = await prisma.lead.count({ where: { email: "genuine@example.com" } });
     const resDedupe = await requestApi({
       body: {
-        name: "Genuine User",
+        name: "Genuine User Duplicate",
         email: "genuine@example.com",
         phone: "+91 7510109730",
         service: "branding-identity",
+        message: "Unique message for dedupe testing",
         elapsedMs: 4000,
       },
       headers: { "x-forwarded-for": "10.0.1.1" },
     });
     const bodyDedupe = await resDedupe.text();
+    const countAfterDedupe = await prisma.lead.count({ where: { email: "genuine@example.com" } });
 
-    console.log("Status Codes:");
-    console.log(`  Genuine:   ${resGenuine.status}`);
-    console.log(`  Honeypot:  ${resHp.status}`);
-    console.log(`  Fast:      ${resFast.status}`);
-    console.log(`  Dedupe:    ${resDedupe.status}`);
+    assert.strictEqual(countBeforeDedupe, 1, "First submission must have created 1 row");
+    assert.strictEqual(countAfterDedupe, 1, "Dedupe must NOT insert a second row in database");
+    console.log(`Deduplication DB Row Count Check: before=${countBeforeDedupe}, after=${countAfterDedupe} (zero rows inserted)`);
 
-    console.log("Cache-Control Headers:");
-    console.log(`  Genuine:   ${resGenuine.headers.get("Cache-Control")}`);
-    console.log(`  Honeypot:  ${resHp.headers.get("Cache-Control")}`);
-    console.log(`  Fast:      ${resFast.headers.get("Cache-Control")}`);
-    console.log(`  Dedupe:    ${resDedupe.headers.get("Cache-Control")}`);
+    console.log("\n4-Way Side-by-Side Comparison:");
+    console.log("┌─────────────┬────────┬──────────────────────────┬────────────────┐");
+    console.log("│ Case        │ Status │ Cache-Control            │ Body           │");
+    console.log("├─────────────┼────────┼──────────────────────────┼────────────────┤");
+    console.log(`│ Genuine     │ ${resGenuine.status}    │ ${(resGenuine.headers.get("cache-control") || "").padEnd(24)} │ ${bodyGenuine.padEnd(14)} │`);
+    console.log(`│ Honeypot    │ ${resHp.status}    │ ${(resHp.headers.get("cache-control") || "").padEnd(24)} │ ${bodyHp.padEnd(14)} │`);
+    console.log(`│ Fast Submit │ ${resFast.status}    │ ${(resFast.headers.get("cache-control") || "").padEnd(24)} │ ${bodyFast.padEnd(14)} │`);
+    console.log(`│ Dedupe      │ ${resDedupe.status}    │ ${(resDedupe.headers.get("cache-control") || "").padEnd(24)} │ ${bodyDedupe.padEnd(14)} │`);
+    console.log("└─────────────┴────────┴──────────────────────────┴────────────────┘");
 
-    console.log("Bodies:");
-    console.log(`  Genuine:   ${bodyGenuine}`);
-    console.log(`  Honeypot:  ${bodyHp}`);
-    console.log(`  Fast:      ${bodyFast}`);
-    console.log(`  Dedupe:    ${bodyDedupe}`);
+    console.log("\nResponse Headers Comparison:");
+    console.log("  Genuine:     " + JSON.stringify(Object.fromEntries(resGenuine.headers.entries())));
+    console.log("  Honeypot:    " + JSON.stringify(Object.fromEntries(resHp.headers.entries())));
+    console.log("  Fast Submit: " + JSON.stringify(Object.fromEntries(resFast.headers.entries())));
+    console.log("  Dedupe:      " + JSON.stringify(Object.fromEntries(resDedupe.headers.entries())));
 
     assert.strictEqual(resGenuine.status, 201);
     assert.strictEqual(resHp.status, 201);
@@ -329,7 +338,7 @@ async function runSuite() {
     assert.strictEqual(bodyHp, '{"ok":true}');
     assert.strictEqual(bodyFast, '{"ok":true}');
     assert.strictEqual(bodyDedupe, '{"ok":true}');
-    console.log("✓ TEST 1 PASSED: Byte-for-byte identical 201 responses.\n");
+    console.log("✓ TEST 1 PASSED: Byte-for-byte identical 201 responses with dedupe DB check.\n");
 
     // =========================================================================
     // TEST 2: Content-Type (415), Payload Size (413), and Bad JSON / Zod (400)
@@ -497,7 +506,22 @@ async function runSuite() {
     console.log(`Published (PUBLISHED) Service Status: ${resPublished.status}`);
     console.log(`Published (PUBLISHED) Service Response: ${JSON.stringify(publishedBody)}`);
     assert.strictEqual(resPublished.status, 201);
-    console.log("✓ TEST 4 PASSED: Service slug status verified with fixed error message.\n");
+
+    // c) Client sends serviceInterest containing control characters -> 400
+    const resControlService = await requestApi({
+      body: {
+        name: "Service Control Tester",
+        email: "ctrl.service@example.com",
+        serviceInterest: "x\r\nBcc: a@b.c",
+        elapsedMs: 3000,
+      },
+    });
+    const ctrlServiceBody = await resControlService.json();
+    console.log(`Control Characters in serviceInterest Status: ${resControlService.status}`);
+    console.log(`Control Characters in serviceInterest Response: ${JSON.stringify(ctrlServiceBody)}`);
+    assert.strictEqual(resControlService.status, 400);
+    assert.ok(ctrlServiceBody.errors && ctrlServiceBody.errors.serviceInterest, "Must reject control characters in serviceInterest");
+    console.log("✓ TEST 4 PASSED: Service slug status verified and control characters in serviceInterest rejected.\n");
 
     // =========================================================================
     // TEST 5: ipHash Privacy, Raw IP Exclusion & ActivityLog (Task 7 & 1)
@@ -825,13 +849,54 @@ async function runSuite() {
     assert.strictEqual(failMeta.email, undefined);
     assert.strictEqual(failMeta.message, undefined);
 
-    // (iii) When RESEND_API_KEY is unset, mock server receives ZERO requests
+    // (iii) When RESEND_API_KEY is set but LEAD_NOTIFICATION_TO is unset, mock server receives ZERO requests
+    console.log("\nTesting RESEND_API_KEY set but LEAD_NOTIFICATION_TO unset...");
+    receivedResendRequests.length = 0;
+    mockResendShouldFail = false;
+
+    const missingToPort = 3013;
+    missingToServer = spawnNextServer(missingToPort, {
+      ...process.env,
+      PORT: String(missingToPort),
+      NODE_ENV: "production",
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: TEST_SECRET,
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      ALLOWED_ORIGINS: `http://127.0.0.1:${missingToPort}`,
+      RESEND_API_KEY: "re_mock_test_key_placeholder",
+      LEAD_NOTIFICATION_TO: "", // deliberately unset!
+      LEAD_NOTIFICATION_FROM: "leads@akzqcreation.com",
+      RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
+    });
+
+    const isMissingToReady = await waitForServer(missingToPort);
+    assert.ok(isMissingToReady, "Server with missing TO failed to start");
+
+    const resMissingTo = await requestApi({
+      port: missingToPort,
+      body: {
+        name: "Missing TO User",
+        email: "missingto@example.com",
+        elapsedMs: 3000,
+      },
+      headers: { origin: `http://127.0.0.1:${missingToPort}` },
+    });
+    assert.strictEqual(resMissingTo.status, 201);
+
+    await new Promise((r) => setTimeout(r, 800));
+    console.log(`Mock Resend request count with LEAD_NOTIFICATION_TO unset: ${receivedResendRequests.length}`);
+    assert.strictEqual(receivedResendRequests.length, 0, "Mock Resend must receive 0 requests when TO is unset");
+    killProcessTree(missingToServer);
+    missingToServer = null;
+
+    // (iv) When RESEND_API_KEY is unset, mock server receives ZERO requests
     console.log("\nTesting RESEND_API_KEY unset (notifications disabled)...");
     receivedResendRequests.length = 0;
     mockResendShouldFail = false;
 
     const noResendPort = 3014;
-    const noResendServer = spawnNextServer(noResendPort, {
+    noResendServer = spawnNextServer(noResendPort, {
       ...process.env,
       PORT: String(noResendPort),
       NODE_ENV: "production",
@@ -842,8 +907,8 @@ async function runSuite() {
       ALLOWED_ORIGINS: `http://127.0.0.1:${noResendPort}`,
       // RESEND_API_KEY deliberately unset!
       RESEND_API_KEY: "",
-      NOTIFY_EMAIL: "",
-      RESEND_FROM_EMAIL: "",
+      LEAD_NOTIFICATION_TO: "",
+      LEAD_NOTIFICATION_FROM: "",
       RESEND_BASE_URL: `http://127.0.0.1:${MOCK_RESEND_PORT}`,
     });
 
@@ -865,6 +930,7 @@ async function runSuite() {
     console.log(`Mock Resend request count with RESEND_API_KEY unset: ${receivedResendRequests.length}`);
     assert.strictEqual(receivedResendRequests.length, 0, "Mock Resend must receive 0 requests when API key unset");
     killProcessTree(noResendServer);
+    noResendServer = null;
 
     console.log("✓ TEST 8 PASSED: Resend notification fields, failure handling, and disabled state verified.\n");
 
@@ -1051,12 +1117,53 @@ async function runSuite() {
     assert.ok(hangDuration >= 4500 && hangDuration <= 9000, `Expected duration ~5-7s, got ${hangDuration}ms`);
     console.log("✓ TEST 11 PASSED: Database timeout returns 503 cleanly within ~6s.\n");
 
+    // =========================================================================
+    // TEST 12: Database Connection Refused (ECONNREFUSED -> 503)
+    // =========================================================================
+    console.log("--- TEST 12: Database Connection Refused (ECONNREFUSED -> 503) ---");
+    const CLOSED_PORT = 54399; // Closed port where no service is listening
+    const portRefused = 3015;
+    connRefusedServer = spawnNextServer(portRefused, {
+      ...process.env,
+      PORT: String(portRefused),
+      NODE_ENV: "production",
+      DATABASE_URL: `postgresql://postgres:password@127.0.0.1:${CLOSED_PORT}/closed_db`,
+      DIRECT_URL: `postgresql://postgres:password@127.0.0.1:${CLOSED_PORT}/closed_db`,
+      IP_HASH_SECRET: TEST_SECRET,
+      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+    });
+
+    const isRefusedReady = await waitForServer(portRefused);
+    assert.ok(isRefusedReady, "Connection refused test server failed to start");
+
+    const resRefused = await requestApi({
+      port: portRefused,
+      body: { name: "Refused User", email: "refused@example.com", elapsedMs: 3000 },
+      headers: { "x-forwarded-for": "10.0.12.1" },
+    });
+    const refusedBody = await resRefused.json();
+    console.log(`Connection Refused Status: ${resRefused.status}`);
+    console.log(`Connection Refused Body: ${JSON.stringify(refusedBody)}`);
+
+    assert.strictEqual(resRefused.status, 503);
+    assert.strictEqual(resRefused.headers.get("Cache-Control"), "no-store");
+    assert.strictEqual(
+      refusedBody.error,
+      "Service temporarily unavailable. Please try again or reach us directly."
+    );
+    killProcessTree(connRefusedServer);
+    connRefusedServer = null;
+    console.log("✓ TEST 12 PASSED: Connection refused cleanly returns 503 with standard error.\n");
+
   } finally {
     console.log("Cleaning up servers and resources...");
     killProcessTree(prodServer);
     killProcessTree(devServer);
     killProcessTree(secretFailServer);
     killProcessTree(timeoutServer);
+    killProcessTree(missingToServer);
+    killProcessTree(noResendServer);
+    killProcessTree(connRefusedServer);
     if (hangTcpServer) {
       try {
         hangTcpServer.close();
