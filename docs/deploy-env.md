@@ -12,12 +12,12 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 |---|---|---|---|
 | `DATABASE_URL` | **Yes** | Neon pooled Postgres connection string with SSL (used by Prisma Client runtime) | `postgresql://user:pass@ep-pooler.neon.tech/neondb?sslmode=require` |
 | `DIRECT_URL` | **Yes** | Neon direct (non-pooled) connection string (MUST be used for migrations and schema operations) | `postgresql://user:pass@ep-direct.neon.tech/neondb?sslmode=require` |
-| `IP_HASH_SECRET` | **Yes** | High-entropy secret key for HMAC-SHA256 IP hashing (MUST be at least 32 characters) | `openssl rand -hex 32` |
+| `IP_HASH_SECRET` | **Yes** | High-entropy secret key for HMAC-SHA256 IP hashing under India's DPDP Act (MUST be at least 32 characters) | `openssl rand -hex 32` |
 | `NEXT_PUBLIC_SITE_URL` | **Yes** | Canonical public site URL (used for CORS and canonical tags) | `https://akzqcreation.com` |
 | `ALLOWED_ORIGINS` | Optional | Comma-separated list of additional allowed origins for `/api/leads`. Note: `www` subdomain should redirect to apex (`https://akzqcreation.com`) at DNS/host level; preview deployments are not allowed by default unless explicitly listed here | `https://preview.example.com` |
 | `RESEND_API_KEY` | Optional | API key for Resend email notifications (default: disabled if unset) | `re_123456789...` |
-| `NOTIFY_EMAIL` | Optional | Recipient email address for new lead notifications | `you@example.com` |
-| `RESEND_FROM_EMAIL`| Optional | Verified sending email address on Resend (if unset, notifications stay disabled) | `leads@example.com` |
+| `LEAD_NOTIFICATION_TO` | Optional | Recipient email address for new lead notifications (must be set alongside `RESEND_API_KEY` and `LEAD_NOTIFICATION_FROM` to enable email alerts) | `notifications@akzqcreation.com` |
+| `LEAD_NOTIFICATION_FROM` | Optional | Verified sending email address on Resend (must use a verified domain) | `leads@akzqcreation.com` |
 | `RESEND_BASE_URL` | Optional | Custom base URL for Resend API (default: https://api.resend.com, useful for mock servers or proxying) | `https://api.resend.com` |
 
 > [!IMPORTANT]
@@ -26,29 +26,29 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 
 ---
 
-## 2. Security & Privacy Guarantees
+## 2. Security & Abuse Defense Guarantees
 
-1. **Zero Raw IP Storage**:
+1. **Zero Raw IP Storage (India's DPDP Act Compliance)**:
    - Client IP addresses are never written to the database.
    - All IPs are hashed using `crypto.createHmac("sha256", IP_HASH_SECRET).update(ip).digest("hex")`.
-   - The route strictly enforces that `IP_HASH_SECRET` is set and at least 32 characters; if missing or short, it aborts with HTTP 503 and never hashes with an empty or insecure key.
+   - The route strictly enforces that `IP_HASH_SECRET` is set and at least 32 characters, and does not start with `"replace-with"`; if invalid, it aborts with HTTP 503 and never hashes with an empty or insecure key.
    - For clients where no IP header is present, submissions are grouped into a shared `"unknown"` bucket with a stricter rate limit (max 2/hour, max 5/day).
 
 2. **Zero PII in Audit Logs**:
    - `ActivityLog` captures actions such as `lead.created` and `lead.notify_failed`.
-   - The `metadata` payload strictly logs operational flags (`source`, `hasPhone`, `budgetRange`) and strictly excludes personal data (no names, emails, phone numbers, or freeform messages).
+   - The `metadata` payload strictly logs operational flags (`source`, `serviceInterest` from verified database Service rows, `hasPhone`, `budgetRange`) and strictly excludes personal data (no names, emails, phone numbers, or freeform messages).
 
 3. **Rate Limiting & Abuse Defense**:
    - **Origin Verification**: Checked against `NEXT_PUBLIC_SITE_URL` and `ALLOWED_ORIGINS` via parsed exact origin comparison (`new URL(origin).origin === allowed`). Malformed origins or unauthorized origins receive HTTP 403.
    - **Content-Type Enforcement**: Only `application/json` is accepted (415 otherwise).
-   - **Payload Ceiling**: Max body size is capped at 10KB (413 otherwise).
-   - **Dynamic Rate Limit**: Max 5 submissions per hour, max 20 per day per `ipHash` (429 with dynamic `Retry-After` header computed from the remaining lifetime of the oldest in-window row, minimum 1 second).
+   - **Payload Ceiling**: Max body size is capped at 10KB (413 otherwise) via streaming request reader.
+   - **Dynamic Rate Limit**: Max 5 submissions per hour, max 20 per day per `ipHash` for known IPs. Stricter limits for unknown IPs (max 2/hour, max 5/day). Returns 429 with dynamic `Retry-After` header computed from the remaining lifetime of the oldest in-window row, minimum 1 second.
    - **Uniform 201 Response Shape**:
-     - Genuine valid submissions, Honeypot traps (`hp_field`), Fast submissions (`elapsedMs < 2000`), and Deduplications (same email + message within 10 minutes) **all return the exact same 201 `{"ok":true}` response** with `Cache-Control: no-store`.
+     - Genuine valid submissions, Honeypot traps (`hp_field`), Fast submissions (`elapsedMs < 2000`), and Deduplications (same email + message within 10 minutes) **all return the exact same 201 `{"ok":true}` response** with `Cache-Control: no-store` and identical headers.
      - No database lead ID is ever returned to the client in any scenario.
 
 4. **HTTP Route Protection**:
-   - No `GET` handler exists on `/api/leads` (leads cannot be queried over HTTP; returns 405 Method Not Allowed).
+   - No `GET` handler exists on `/api/leads` (leads cannot be queried over HTTP; returns 405 Method Not Allowed with `Allow: POST`).
    - Responses are always marked `Cache-Control: no-store`.
 
 ---
@@ -83,12 +83,12 @@ Follow this strict deployment order:
      - `NEXT_PUBLIC_SITE_URL` (`https://akzqcreation.com`)
      - *(Optional)* `ALLOWED_ORIGINS` (e.g. for preview domains)
      - *(Optional)* `RESEND_API_KEY` (if email notifications enabled)
-     - *(Optional)* `NOTIFY_EMAIL` (`you@example.com`)
-     - *(Optional)* `RESEND_FROM_EMAIL` (`leads@example.com`)
+     - *(Optional)* `LEAD_NOTIFICATION_TO` (`notifications@akzqcreation.com`)
+     - *(Optional)* `LEAD_NOTIFICATION_FROM` (`leads@akzqcreation.com`)
 
 5. **Step 5: Deploy Application to Vercel**
    - > [!WARNING]
-     > **Do not merge to main or deploy without the owner's explicit approval; main currently holds the legacy static site.** Deployment happens only after owner approval.
+     > **Do not merge to main or deploy without the owner's explicit approval; main holds the legacy static site.**
    - Trigger deployment from the approved branch via Vercel dashboard or CLI.
    - Build completes with zero DB queries during build time (`next build --webpack`).
 
@@ -136,3 +136,4 @@ This override resolves security vulnerability **GHSA-7589-6fvf-x4pw** in the `ef
 
 - **`zod`**: Zod is used exclusively for runtime schema validation and sanitization of incoming lead capture payloads, ensuring strict type safety and control character rejection before database persistence.
 - **`dotenv`**: Loaded in `prisma.config.ts` to read `.env` credentials when running Prisma CLI commands (e.g. `prisma migrate status`) in standalone shells without external environment exports.
+- **`pg` & `@types/pg`**: Direct dependency required by `@prisma/adapter-pg` for connection pooling, pool size capping (max 3), query timeout enforcement (10000ms), and idle connection lifecycle management.
