@@ -12,6 +12,12 @@ const noStoreHeaders = {
   "Cache-Control": "no-store",
 };
 
+// Rate limiting constants
+const HOURLY_RATE_LIMIT = 5;
+const DAILY_RATE_LIMIT = 20;
+const UNKNOWN_IP_HOURLY_RATE_LIMIT = 2;
+const UNKNOWN_IP_DAILY_RATE_LIMIT = 5;
+
 const noControlChars = (val?: string | null) =>
   !val || !/[\x00-\x1F\x7F]/.test(val);
 
@@ -32,9 +38,7 @@ const LeadInputSchema = z.object({
   phone: z
     .string()
     .trim()
-    .regex(/^[+0-9\s\-()]+$/, "Invalid phone format")
-    .min(7, "Phone number is too short")
-    .max(20, "Phone number is too long")
+    .regex(/^[\d\s+\-]{7,20}$/, "Invalid phone format")
     .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
@@ -46,6 +50,13 @@ const LeadInputSchema = z.object({
     .nullable()
     .optional(),
   service: z
+    .string()
+    .trim()
+    .max(100)
+    .refine(noControlChars, { message: "Control characters are not allowed" })
+    .nullable()
+    .optional(),
+  serviceInterest: z
     .string()
     .trim()
     .max(100)
@@ -111,7 +122,7 @@ const LeadInputSchema = z.object({
   referrer: z
     .string()
     .trim()
-    .max(500)
+    .max(200)
     .refine(noControlChars, { message: "Control characters are not allowed" })
     .nullable()
     .optional(),
@@ -272,7 +283,7 @@ export async function POST(request: NextRequest) {
 
   const payload = validation.data;
 
-  // 6. Honeypot check: silently accept without inserting
+  // 6. Honeypot check: silently accept without inserting (201 Created)
   if (payload.hp_field && payload.hp_field.trim().length > 0) {
     return NextResponse.json(
       { ok: true },
@@ -280,7 +291,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 7. Fast submission check (< 2000ms): silently accept without inserting
+  // 7. Fast submission check (< 2000ms): silently accept without inserting (201 Created)
   if (typeof payload.elapsedMs === "number" && payload.elapsedMs < 2000) {
     return NextResponse.json(
       { ok: true },
@@ -311,9 +322,10 @@ export async function POST(request: NextRequest) {
 
   try {
     // 9. Service validation against published Services in DB
+    const requestedService = payload.service || payload.serviceInterest;
     let serviceRecord: { id: string; title: string; slug: string } | null = null;
-    if (payload.service && payload.service.trim().length > 0) {
-      const serviceInput = payload.service.trim();
+    if (requestedService && requestedService.trim().length > 0) {
+      const serviceInput = requestedService.trim();
 
       const serviceSlugMap: Record<string, string> = {
         "branding-identity": "branding-identity",
@@ -363,9 +375,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 10. Rate limiting:
-    // Stricter limits for unknown IP bucket: 2/hour, 5/day
-    // Standard limits for known IP: 5/hour, 20/day
-    const hourlyLimit = isUnknownIp ? 2 : 5;
+    // Stricter limits for unknown IP bucket: UNKNOWN_IP_HOURLY_RATE_LIMIT/hour, UNKNOWN_IP_DAILY_RATE_LIMIT/day
+    // Standard limits for known IP: HOURLY_RATE_LIMIT/hour, DAILY_RATE_LIMIT/day
+    const hourlyLimit = isUnknownIp ? UNKNOWN_IP_HOURLY_RATE_LIMIT : HOURLY_RATE_LIMIT;
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const hourCount = await db.lead.count({
       where: {
@@ -399,7 +411,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const dailyLimit = isUnknownIp ? 5 : 20;
+    const dailyLimit = isUnknownIp ? UNKNOWN_IP_DAILY_RATE_LIMIT : DAILY_RATE_LIMIT;
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const dayCount = await db.lead.count({
       where: {
@@ -433,7 +445,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 11. Deduplication: same email + same message within 10 minutes
+    // 11. Deduplication: same email + same message within 10 minutes (201 Created)
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const existingDuplicate = await db.lead.findFirst({
       where: {
@@ -474,6 +486,7 @@ export async function POST(request: NextRequest) {
     const userAgent = request.headers.get("user-agent")?.slice(0, 255) || null;
 
     // 12. Storage: Create Lead record
+    // NOTE: serviceInterest strictly comes from verified database Service row, never from client text
     const lead = await db.lead.create({
       data: {
         source: "CONTACT_FORM",
@@ -481,14 +494,14 @@ export async function POST(request: NextRequest) {
         email: payload.email,
         phone: payload.phone || null,
         company: payload.company || null,
-        serviceId: serviceRecord?.id || null,
-        serviceInterest: serviceRecord?.title || payload.service || null,
+        serviceId: serviceRecord ? serviceRecord.id : null,
+        serviceInterest: serviceRecord ? serviceRecord.title : null,
         budgetRange,
         message: payload.message || null,
         utmSource: utmSource ? utmSource.slice(0, 200) : null,
         utmMedium: utmMedium ? utmMedium.slice(0, 200) : null,
         utmCampaign: utmCampaign ? utmCampaign.slice(0, 200) : null,
-        referrer: sanitizedReferrer ? sanitizedReferrer.slice(0, 500) : null,
+        referrer: sanitizedReferrer ? sanitizedReferrer.slice(0, 200) : null,
         ipHash,
         userAgent,
         consentGivenAt: new Date(),
@@ -496,7 +509,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 13. Create ActivityLog entry (ZERO PII in metadata)
+    // 13. Create ActivityLog entry (ZERO client-supplied text in metadata)
     await db.activityLog.create({
       data: {
         action: "lead.created",
@@ -505,6 +518,7 @@ export async function POST(request: NextRequest) {
         ipHash,
         metadata: {
           source: "CONTACT_FORM",
+          serviceInterest: serviceRecord ? serviceRecord.title : null,
           hasPhone: Boolean(payload.phone),
           budgetRange,
         },
@@ -514,8 +528,8 @@ export async function POST(request: NextRequest) {
     // 14. Optional email notification via after()
     if (
       process.env.RESEND_API_KEY &&
-      process.env.NOTIFY_EMAIL &&
-      process.env.RESEND_FROM_EMAIL
+      process.env.LEAD_NOTIFICATION_TO &&
+      process.env.LEAD_NOTIFICATION_FROM
     ) {
       after(async () => {
         await sendLeadNotification({
