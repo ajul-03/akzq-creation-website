@@ -1,8 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
 const globalForPrisma = globalThis as unknown as {
   prismaInstance: PrismaClient | undefined;
+  prismaPool: Pool | undefined;
   prisma: PrismaClient | undefined;
 };
 
@@ -11,12 +13,23 @@ function createClient(): PrismaClient {
   if (!connectionString) {
     throw new Error("DATABASE_URL environment variable is missing.");
   }
-  const adapter = new PrismaPg({
-    connectionString,
-    connectionTimeoutMillis: 5000,
-    statement_timeout: 5000,
-    query_timeout: 5000,
-  });
+
+  const pool =
+    globalForPrisma.prismaPool ??
+    new Pool({
+      connectionString,
+      max: 3,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+      statement_timeout: 10000,
+      query_timeout: 10000,
+    });
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForPrisma.prismaPool = pool;
+  }
+
+  const adapter = new PrismaPg(pool);
   return new PrismaClient({
     adapter,
     log:
