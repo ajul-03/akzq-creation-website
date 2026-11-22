@@ -880,7 +880,10 @@ async function runSuite() {
         email: "missingto@example.com",
         elapsedMs: 3000,
       },
-      headers: { origin: `http://127.0.0.1:${missingToPort}` },
+      headers: {
+        origin: `http://127.0.0.1:${missingToPort}`,
+        "x-forwarded-for": "198.51.100.88",
+      },
     });
     assert.strictEqual(resMissingTo.status, 201);
 
@@ -922,7 +925,10 @@ async function runSuite() {
         email: "noresend@example.com",
         elapsedMs: 3000,
       },
-      headers: { origin: `http://127.0.0.1:${noResendPort}` },
+      headers: {
+        origin: `http://127.0.0.1:${noResendPort}`,
+        "x-forwarded-for": "198.51.100.89",
+      },
     });
     assert.strictEqual(resNoResend.status, 201);
 
@@ -977,7 +983,10 @@ async function runSuite() {
     const resAllowedOrigin = await requestApi({
       port: DEV_PORT,
       body: { name: "Allowed Origin User", email: "allowed.origin@example.com", elapsedMs: 3000 },
-      headers: { origin: `http://localhost:${DEV_PORT}` },
+      headers: {
+        origin: `http://localhost:${DEV_PORT}`,
+        "x-forwarded-for": "198.51.100.99",
+      },
     });
     console.log(`Allowed Origin (http://localhost:${DEV_PORT}) Status: ${resAllowedOrigin.status}`);
     assert.strictEqual(resAllowedOrigin.status, 201);
@@ -986,7 +995,10 @@ async function runSuite() {
     const resDisallowedOrigin = await requestApi({
       port: DEV_PORT,
       body: { name: "Disallowed Origin User", email: "disallowed.origin@example.com", elapsedMs: 3000 },
-      headers: { origin: `http://localhost:9999` },
+      headers: {
+        origin: `http://localhost:9999`,
+        "x-forwarded-for": "198.51.100.100",
+      },
     });
     console.log(`Unlisted Origin (http://localhost:9999) Status: ${resDisallowedOrigin.status}`);
     assert.strictEqual(resDisallowedOrigin.status, 403);
