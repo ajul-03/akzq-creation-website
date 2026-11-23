@@ -67,6 +67,8 @@ export function ContactForm() {
     const utmSource = urlParams?.get("utm_source") || null;
     const utmMedium = urlParams?.get("utm_medium") || null;
     const utmCampaign = urlParams?.get("utm_campaign") || null;
+    const utmTerm = urlParams?.get("utm_term") || null;
+    const utmContent = urlParams?.get("utm_content") || null;
     const referrer = referrerOnMount;
 
     setSubmitting(true);
@@ -88,6 +90,8 @@ export function ContactForm() {
           utmSource,
           utmMedium,
           utmCampaign,
+          utmTerm,
+          utmContent,
           referrer,
           hp_field,
           elapsedMs,
@@ -115,15 +119,22 @@ export function ContactForm() {
         setSubmitting(false);
         try {
           const data = await response.json();
-          if (data.errors && typeof data.errors === "object") {
-            const inv: Record<string, boolean> = {};
-            for (const k of Object.keys(data.errors)) {
-              inv[k] = true;
-            }
-            setInvalidFields(inv);
+          const errors = data.errors && typeof data.errors === "object" ? data.errors : {};
+          const coreFieldError = !!(errors.name || errors.email || errors.service);
+          const inv: Record<string, boolean> = {};
+          for (const k of Object.keys(errors)) {
+            inv[k] = true;
           }
-        } catch {}
-        setValidationError("Please fill in your Name, Email, and select the Required Service.");
+          setInvalidFields(inv);
+          if (coreFieldError) {
+            setValidationError("Please fill in your Name, Email, and select the Required Service.");
+          } else {
+            // Other 400 (phone format, length, control chars, consent) → fallback
+            setFallbackError(true);
+          }
+        } catch {
+          setValidationError("Please fill in your Name, Email, and select the Required Service.");
+        }
         return;
       }
 
@@ -311,6 +322,7 @@ export function ContactForm() {
           <div
             id="formValidationError"
             className="form-error"
+            role="alert"
             style={{
               padding: "12px 16px",
               marginBottom: "16px",
@@ -331,6 +343,7 @@ export function ContactForm() {
           <div
             id="formFallbackError"
             className="form-error"
+            role="alert"
             style={{
               padding: "12px 16px",
               marginBottom: "16px",
