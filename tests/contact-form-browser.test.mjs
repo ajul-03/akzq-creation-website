@@ -510,6 +510,92 @@ async function runBrowserTest() {
     console.log("✓ TASK 4 PASSED: Real server 400 displays legacy message once per form with aria-invalid.\n");
 
     // =========================================================================
+    // TASK 4b: T1 — 400 Routing Browser Tests
+    // (a) Empty name/email/service -> legacy string (client-side validation)
+    // (b) Valid name/email/service with phone "abc" -> fallback line, NOT legacy
+    // =========================================================================
+    console.log("--- TASK 4b: T1 400 Routing (Legacy vs Fallback) Browser Tests ---");
+
+    // Extract legacy string programmatically (same as above, reuse legacyJsAlert)
+    const legacyString = legacyJsAlert;
+    console.log(`Legacy String (from assets/js/contact.js): "${legacyString}"`);
+    const expectedFallbackT1 = "We couldn't send your message just now. Please call +91 75101 09730 or message us on WhatsApp.";
+
+    // Fresh page to clear all state
+    await page.goto(`http://127.0.0.1:${BROWSER_PORT}/contact`, { waitUntil: "networkidle" });
+
+    // --- Subcase (a): Submit empty form -> client-side legacy string ---
+    console.log('\n[T1 Subcase a: Empty name/email/service -> legacy string]');
+    await page.click('button[type="submit"]', { noWaitAfter: true });
+    await page.waitForTimeout(400);
+
+    const valErrA = page.locator("#formValidationError");
+    await valErrA.waitFor({ state: "visible", timeout: 3000 });
+    const textA = await valErrA.innerText();
+    console.log(`Displayed text: "${textA}"`);
+    console.log(`Assertion: displayed === legacyString`);
+    console.log(`Code: assert.strictEqual(displayed, "${legacyString}")`);
+    assert.strictEqual(textA, legacyString, "Empty form submit must show legacy string");
+
+    // role="alert" check on #formValidationError
+    const roleA = await valErrA.getAttribute("role");
+    assert.strictEqual(roleA, "alert", "#formValidationError must have role='alert'");
+    console.log(`role="${roleA}" on #formValidationError ✓`);
+
+    // No fallback error visible
+    const fallbackVisA = await page.locator("#formFallbackError").isVisible();
+    assert.strictEqual(fallbackVisA, false, "Fallback must NOT appear on empty-form submit");
+    console.log(`#formFallbackError visible: ${fallbackVisA} (must be false) ✓`);
+
+    // --- Subcase (b): Valid name/email/service, phone="abc" -> server 400 -> fallback ---
+    console.log('\n[T1 Subcase b: Valid name/email/service, phone "abc" -> server 400 -> fallback line]');
+    await page.fill('#clientName', 'Phone Tester');
+    await page.fill('#clientEmail', 'phone.tester@example.com');
+    await page.fill('#clientPhone', 'abc');      // invalid phone format -> Zod 400 on phone
+    await page.selectOption('#serviceRequiredSelect', { index: 1 });
+    // Bypass HTML5 validation so the form submits with phone="abc"
+    await page.evaluate(() => {
+      const form = document.getElementById("agencyQuoteForm");
+      if (form) form.noValidate = true;
+    });
+    await page.waitForTimeout(2100);  // ensure elapsedMs > 2000
+
+    const [phoneRes] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes("/api/leads") && res.request().method() === "POST",
+        { timeout: 10000 }
+      ),
+      page.click('button[type="submit"]', { noWaitAfter: true }),
+    ]);
+    console.log(`Server response status: ${phoneRes.status()}`);
+    const phoneResBody = await phoneRes.json();
+    console.log(`Server response body: ${JSON.stringify(phoneResBody)}`);
+    assert.strictEqual(phoneRes.status(), 400);
+    assert.ok(phoneResBody.errors && phoneResBody.errors.phone, "Server must return phone field error");
+
+    await page.waitForTimeout(400);
+
+    // Fallback error must appear (phone 400 is NOT a core-field error)
+    const fallbackB = page.locator("#formFallbackError");
+    await fallbackB.waitFor({ state: "visible", timeout: 3000 });
+    const textB = await fallbackB.innerText();
+    console.log(`Fallback error text: "${textB}"`);
+    console.log(`Code: assert.strictEqual(displayed, "${expectedFallbackT1}")`);
+    assert.strictEqual(textB, expectedFallbackT1, "Phone 400 must show fallback line, NOT legacy string");
+
+    // role="alert" check on #formFallbackError
+    const roleB = await fallbackB.getAttribute("role");
+    assert.strictEqual(roleB, "alert", "#formFallbackError must have role='alert'");
+    console.log(`role="${roleB}" on #formFallbackError ✓`);
+
+    // Legacy error must NOT appear
+    const valErrBVisible = await page.locator("#formValidationError").isVisible();
+    assert.strictEqual(valErrBVisible, false, "Legacy string must NOT appear on phone 400");
+    console.log(`#formValidationError visible: ${valErrBVisible} (must be false) ✓`);
+    console.log("✓ TASK 4b PASSED: Empty form -> legacy string; phone 400 -> fallback line (not legacy).\n");
+
+
+    // =========================================================================
     // TASK 1: Browser Referrer & UTM Test
     // =========================================================================
     console.log("--- TASK 1: Browser Referrer & UTM Capturing ---");

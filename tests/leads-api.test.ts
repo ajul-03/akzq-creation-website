@@ -1405,11 +1405,101 @@ async function runSuite() {
     connRefusedServer = null;
     console.log("✓ TEST 12 PASSED: Connection refused cleanly returns 503 with standard error.\n");
 
+    // =========================================================================
+    // TEST 13: net.isIP Validation in getClientIp (T3)
+    // Assertion code (src/app/api/leads/route.ts getClientIp):
+    //   const validIp = rawIp && net.isIP(rawIp) !== 0 ? rawIp : null;
+    //   const isUnknown = !validIp;
+    //   const identifier = isUnknown ? "unknown-client-ip" : validIp;
+    // =========================================================================
+    console.log("--- TEST 13: net.isIP Client IP Validation (T3) ---");
+    console.log("Assertion code (from getClientIp):");
+    console.log(`  const validIp = rawIp && net.isIP(rawIp) !== 0 ? rawIp : null;
+  const isUnknown = !validIp;
+  const identifier = isUnknown ? "unknown-client-ip" : validIp;`);
+
+    // Clear existing unknown-bucket leads to get a fresh count baseline
+    const unknownHash = hashIp("unknown-client-ip", TEST_SECRET);
+    const baselineUnknownCount = await prisma.lead.count({ where: { ipHash: unknownHash } });
+    console.log(`\nBaseline unknown-bucket lead count: ${baselineUnknownCount}`);
+
+    // (a) Invalid IP string "not-an-ip" -> unknown bucket
+    console.log('\n[Subcase a: x-forwarded-for "not-an-ip" -> unknown bucket]');
+    const resInvalidIp = await requestApi({
+      body: { name: "Invalid IP User", email: "invalid.ip@example.com", elapsedMs: 3000 },
+      headers: { "x-forwarded-for": "not-an-ip" },
+    });
+    console.log(`Status: ${resInvalidIp.status}`);
+    assert.strictEqual(resInvalidIp.status, 201);
+
+    const invalidIpLead = await prisma.lead.findFirst({
+      where: { email: "invalid.ip@example.com" },
+    });
+    assert.ok(invalidIpLead, "Lead must exist");
+    assert.strictEqual(
+      invalidIpLead.ipHash,
+      unknownHash,
+      `"not-an-ip" must hash as unknown-client-ip bucket`
+    );
+    console.log(`ipHash for "not-an-ip": ${invalidIpLead.ipHash} (matches unknownHash: ${invalidIpLead.ipHash === unknownHash})`);
+
+    // (b) Empty x-forwarded-for "" -> unknown bucket
+    console.log('\n[Subcase b: x-forwarded-for "" (empty) -> unknown bucket]');
+    const resEmptyIp = await requestApi({
+      body: { name: "Empty IP User", email: "empty.ip@example.com", elapsedMs: 3000 },
+      headers: { "x-forwarded-for": "", "x-real-ip": "" },
+    });
+    console.log(`Status: ${resEmptyIp.status}`);
+    assert.strictEqual(resEmptyIp.status, 201);
+
+    const emptyIpLead = await prisma.lead.findFirst({
+      where: { email: "empty.ip@example.com" },
+    });
+    assert.ok(emptyIpLead);
+    assert.strictEqual(
+      emptyIpLead.ipHash,
+      unknownHash,
+      "Empty x-forwarded-for must hash as unknown-client-ip bucket"
+    );
+    console.log(`ipHash for "" (empty): ${emptyIpLead.ipHash} (matches unknownHash: ${emptyIpLead.ipHash === unknownHash})`);
+
+    // (c) Valid IPv4 -> known bucket (distinct from unknown)
+    console.log('\n[Subcase c: x-forwarded-for "203.0.113.42" (valid IPv4) -> known bucket]');
+    const validTestIp = "203.0.113.42";
+    const resValidIpv4 = await requestApi({
+      body: { name: "Valid IPv4 User", email: "valid.ipv4@example.com", elapsedMs: 3000 },
+      headers: { "x-forwarded-for": validTestIp },
+    });
+    console.log(`Status: ${resValidIpv4.status}`);
+    assert.strictEqual(resValidIpv4.status, 201);
+
+    const validIpv4Lead = await prisma.lead.findFirst({
+      where: { email: "valid.ipv4@example.com" },
+    });
+    assert.ok(validIpv4Lead);
+    const expectedValidIpv4Hash = hashIp(validTestIp, TEST_SECRET);
+    assert.strictEqual(
+      validIpv4Lead.ipHash,
+      expectedValidIpv4Hash,
+      "Valid IPv4 must produce correct HMAC hash"
+    );
+    assert.notStrictEqual(
+      validIpv4Lead.ipHash,
+      unknownHash,
+      "Valid IPv4 ipHash must differ from unknown-client-ip bucket hash"
+    );
+    console.log(`ipHash for "${validTestIp}": ${validIpv4Lead.ipHash}`);
+    console.log(`Expected HMAC hash: ${expectedValidIpv4Hash}`);
+    console.log(`Does NOT equal unknownHash: ${validIpv4Lead.ipHash !== unknownHash}`);
+
+    console.log("✓ TEST 13 PASSED: Invalid/empty IPs -> unknown bucket; valid IPv4 -> known bucket.\n");
+
     console.log("\n========================================================");
     console.log("ALL REAL PRODUCTION-SERVER LEADS API TESTS PASSED CLEANLY");
     console.log("========================================================\n");
 
     await cleanupAndExit(0);
+
   } catch (err) {
     console.error("LEADS API HTTP TEST SUITE FAILED:", err);
     await cleanupAndExit(1);
