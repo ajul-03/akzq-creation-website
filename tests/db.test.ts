@@ -1,6 +1,7 @@
 import assert from "assert";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { execSync } from "child_process";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -14,6 +15,84 @@ const TEST_DB_NAME = "akzq_test_db";
 const SHADOW_DB_NAME = "akzq_shadow_test_db";
 const TEST_DB_URL = `postgresql://postgres:password@127.0.0.1:${TEST_PORT}/${TEST_DB_NAME}`;
 const SHADOW_DB_URL = `postgresql://postgres:password@127.0.0.1:${TEST_PORT}/${SHADOW_DB_NAME}`;
+
+// Fresh data directory under os.tmpdir() (never in project folder or synced directory)
+const tempPgDir = fs.mkdtempSync(path.join(os.tmpdir(), "akzq-db-test-"));
+console.log(`Disposable Postgres temporary data directory: ${tempPgDir}`);
+console.log(`Disposable Postgres port: ${TEST_PORT}\n`);
+
+let testPrisma: any = null;
+let testPool: any = null;
+let pgServer: any = null;
+
+// Hard watchdog: 5 minutes
+const WATCHDOG_MS = 5 * 60 * 1000;
+const watchdog = setTimeout(() => {
+  console.error(`\n❌ HARD WATCHDOG TIMEOUT (5 min): tests/db.test.ts exceeded limit. Forcing cleanup & exit.`);
+  void cleanupAndExit(1);
+}, WATCHDOG_MS);
+watchdog.unref();
+
+async function cleanupAndExit(exitCode: number) {
+  clearTimeout(watchdog);
+  console.log("\nStarting robust cleanup sequence...");
+
+  // 1. Close all database clients first
+  if (testPrisma) {
+    try {
+      await testPrisma.$disconnect();
+    } catch {}
+  }
+  try {
+    await db.$disconnect();
+  } catch {}
+  if (testPool) {
+    try {
+      await testPool.end();
+    } catch {}
+  }
+
+  // 2. Stop Postgres with 15s timeout and force-kill process tree if it does not exit
+  if (pgServer) {
+    try {
+      let stopped = false;
+      const stopPromise = pgServer.stop().then(() => {
+        stopped = true;
+      });
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 15000));
+      await Promise.race([stopPromise, timeoutPromise]);
+      if (!stopped) {
+        console.warn("pgServer.stop() timed out after 15s; force-killing postgres process tree...");
+        const pid = pgServer.process?.pid;
+        if (pid && process.platform === "win32") {
+          try {
+            execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
+          } catch {}
+        }
+      }
+    } catch {
+      const pid = pgServer.process?.pid;
+      if (pid && process.platform === "win32") {
+        try {
+          execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
+        } catch {}
+      }
+    }
+  }
+
+  // 3. Delete data directory
+  try {
+    if (tempPgDir && fs.existsSync(tempPgDir)) {
+      fs.rmSync(tempPgDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      console.log(`Temporary Postgres data directory removed: ${tempPgDir}`);
+    }
+  } catch (err) {
+    console.warn("Could not delete temporary Postgres data directory:", err);
+  }
+
+  console.log(`✓ Cleanup finished with exit code ${exitCode}.`);
+  process.exit(exitCode);
+}
 
 console.log("=== RUNNING DATABASE, DRIFT & LIVE CONSTRAINT TEST SUITE ===\n");
 
@@ -31,8 +110,9 @@ function norm(s: string) {
 }
 
 async function runSuite() {
-  // 1. Prisma Client Singleton Test
-  console.log("--- 1. Prisma Client Singleton Test ---");
+  try {
+    // 1. Prisma Client Singleton Test
+    console.log("--- 1. Prisma Client Singleton Test ---");
   const clientA = db;
   const clientB = db;
   assert.strictEqual(
@@ -49,9 +129,9 @@ async function runSuite() {
 
   // 2. Start Disposable Test Postgres Cluster
   console.log("--- 2. Starting Disposable Postgres Cluster & Safety Checks ---");
-  const pgServer = new EmbeddedPostgres({
+  pgServer = new EmbeddedPostgres({
     port: TEST_PORT,
-    databaseDir: "./.test-pg-data",
+    databaseDir: tempPgDir,
     user: "postgres",
     password: "password",
     persistent: false,
@@ -85,38 +165,37 @@ async function runSuite() {
   await adminClient.query(`DROP DATABASE IF EXISTS ${SHADOW_DB_NAME};`);
   await adminClient.query(`CREATE DATABASE ${SHADOW_DB_NAME};`);
   await adminClient.end();
-  await adminClient.end();
   console.log(`Initialized fresh empty databases: ${TEST_DB_NAME}, ${SHADOW_DB_NAME}.\n`);
 
-  try {
-    // 3. Real Migration Deploy from Empty DB
-    console.log("--- 3. Real Migration Deploy from Empty Database ---");
-    const deployEnv = {
-      ...process.env,
-      DATABASE_URL: TEST_DB_URL,
-      DIRECT_URL: TEST_DB_URL,
-      SHADOW_DATABASE_URL: SHADOW_DB_URL,
-    };
-    const deployOutput = execSync("npx prisma migrate deploy", {
-      env: deployEnv,
-      encoding: "utf8",
-    });
-    console.log(deployOutput.trim());
-    console.log("✓ prisma migrate deploy from empty DB PASSED.\n");
+  // 3. Real Migration Deploy from Empty DB
+  console.log("--- 3. Real Migration Deploy from Empty Database ---");
+  const deployEnv = {
+    ...process.env,
+    DATABASE_URL: TEST_DB_URL,
+    DIRECT_URL: TEST_DB_URL,
+    SHADOW_DATABASE_URL: SHADOW_DB_URL,
+  };
+  const deployOutput = execSync("npx prisma migrate deploy", {
+    env: deployEnv,
+    encoding: "utf8",
+  });
+  console.log(deployOutput.trim());
+  console.log("✓ prisma migrate deploy from empty DB PASSED.\n");
 
-    // 4. Real Schema vs Migration Drift Check (--exit-code)
-    console.log("--- 4. Real Migration Drift Check (prisma migrate diff --exit-code) ---");
-    const diffCmd = `npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code`;
-    const diffOutput = execSync(diffCmd, {
-      env: deployEnv,
-      encoding: "utf8",
-    });
-    console.log(diffOutput.trim() || "[No schema drift detected: diff output is empty]");
-    console.log("✓ prisma migrate diff --exit-code exited 0 (ZERO DRIFT).\n");
+  // 4. Real Schema vs Migration Drift Check (--exit-code)
+  console.log("--- 4. Real Migration Drift Check (prisma migrate diff --exit-code) ---");
+  const diffCmd = `npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code`;
+  const diffOutput = execSync(diffCmd, {
+    env: deployEnv,
+    encoding: "utf8",
+  });
+  console.log(diffOutput.trim() || "[No schema drift detected: diff output is empty]");
+  console.log("✓ prisma migrate diff --exit-code exited 0 (ZERO DRIFT).\n");
 
-    // Connect test PrismaClient
-    const adapter = new PrismaPg({ connectionString: TEST_DB_URL });
-    const testPrisma = new PrismaClient({ adapter });
+  // Connect test PrismaClient
+  testPool = new pg.Pool({ connectionString: TEST_DB_URL });
+  const adapter = new PrismaPg(testPool);
+  testPrisma = new PrismaClient({ adapter });
 
     // 5. Seed Honesty & Idempotency (Twice against real test DB)
     console.log("--- 5. Seed Honesty & Idempotency Execution ---");
@@ -384,18 +463,18 @@ async function runSuite() {
 
     console.log("✓ Content parity verification PASSED: 8 FAQs, 6 Projects, 5 Services, 1 Blog Post.\n");
 
-    await testPrisma.$disconnect();
-  } finally {
-    await pgServer.stop();
-    console.log("Disposable Postgres cluster stopped cleanly.");
-  }
+    console.log("\n========================================================");
+    console.log("ALL REAL DRIFT, SEED, & CONSTRAINT TESTS PASSED CLEANLY");
+    console.log("========================================================\n");
 
-  console.log("\n========================================================");
-  console.log("ALL REAL DRIFT, SEED, & CONSTRAINT TESTS PASSED CLEANLY");
-  console.log("========================================================\n");
+    await cleanupAndExit(0);
+  } catch (err) {
+    console.error("TEST FAILED:", err);
+    await cleanupAndExit(1);
+  }
 }
 
-runSuite().catch((err) => {
-  console.error("TEST FAILED:", err);
-  process.exit(1);
+runSuite().catch(async (err) => {
+  console.error("FATAL SUITE ERROR:", err);
+  await cleanupAndExit(1);
 });

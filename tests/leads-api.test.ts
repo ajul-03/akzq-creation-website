@@ -1,4 +1,7 @@
 import assert from "assert";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { execSync, spawn, ChildProcess } from "child_process";
 import http from "http";
 import net from "net";
@@ -9,11 +12,28 @@ import pg from "pg";
 import { main as runSeed } from "../prisma/seed";
 import { hashIp } from "../src/lib/privacy";
 
-const PG_PORT = 54332;
+const PG_PORT = 54333;
 const TEST_DB_NAME = "akzq_test_db";
 const SHADOW_DB_NAME = "akzq_shadow_test_db";
 const TEST_DB_URL = `postgresql://postgres:password@127.0.0.1:${PG_PORT}/${TEST_DB_NAME}`;
 const TEST_SECRET = "test-secret-salt-for-leads-suite-32c";
+
+// Fresh data directory under os.tmpdir() (never in project folder or synced directory)
+const tempPgDir = fs.mkdtempSync(path.join(os.tmpdir(), "akzq-leads-test-"));
+console.log(`Disposable Postgres temporary data directory: ${tempPgDir}`);
+console.log(`Disposable Postgres port: ${PG_PORT}\n`);
+
+let testPool: pg.Pool | null = null;
+let prisma: PrismaClient | null = null;
+let pgServer: any = null;
+
+// Hard watchdog: 10 minutes
+const WATCHDOG_MS = 10 * 60 * 1000;
+const watchdog = setTimeout(() => {
+  console.error(`\n❌ HARD WATCHDOG TIMEOUT (10 min): tests/leads-api.test.ts exceeded limit. Forcing cleanup & exit.`);
+  void cleanupAndExit(1);
+}, WATCHDOG_MS);
+watchdog.unref();
 
 const PROD_PORT = 3005;
 const DEV_PORT = 3006;
@@ -21,6 +41,18 @@ const SECRET_FAIL_PORT = 3007;
 const TIMEOUT_PORT = 3008;
 const HANG_TCP_PORT = 54336;
 const MOCK_RESEND_PORT = 54335;
+
+let prodServer: ChildProcess | null = null;
+let devServer: ChildProcess | null = null;
+let secretFailServer: ChildProcess | null = null;
+let timeoutServer: ChildProcess | null = null;
+let missingToServer: ChildProcess | null = null;
+let noResendServer: ChildProcess | null = null;
+let connRefusedServer: ChildProcess | null = null;
+let noSiteUrlServer: ChildProcess | null = null;
+let invalidSiteUrlServer: ChildProcess | null = null;
+let hangTcpServer: net.Server | null = null;
+let mockResendServer: http.Server | null = null;
 
 function killProcessTree(child?: ChildProcess | null) {
   if (!child || !child.pid) return;
@@ -31,6 +63,86 @@ function killProcessTree(child?: ChildProcess | null) {
       child.kill("SIGKILL");
     }
   } catch {}
+}
+
+async function cleanupAndExit(exitCode: number) {
+  clearTimeout(watchdog);
+  console.log("\nStarting robust leads-api cleanup sequence...");
+
+  // 1. Close all database clients first
+  if (prisma) {
+    try {
+      await prisma.$disconnect();
+    } catch {}
+  }
+  if (testPool) {
+    try {
+      await testPool.end();
+    } catch {}
+  }
+
+  // 2. Kill spawned Next servers as a process tree
+  killProcessTree(prodServer);
+  killProcessTree(devServer);
+  killProcessTree(secretFailServer);
+  killProcessTree(timeoutServer);
+  killProcessTree(missingToServer);
+  killProcessTree(noResendServer);
+  killProcessTree(connRefusedServer);
+  killProcessTree(noSiteUrlServer);
+  killProcessTree(invalidSiteUrlServer);
+
+  if (hangTcpServer) {
+    try {
+      hangTcpServer.close();
+    } catch {}
+  }
+  if (mockResendServer) {
+    try {
+      mockResendServer.close();
+    } catch {}
+  }
+
+  // 3. Stop Postgres with 15s timeout and force-kill
+  if (pgServer) {
+    try {
+      let stopped = false;
+      const stopPromise = pgServer.stop().then(() => {
+        stopped = true;
+      });
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 15000));
+      await Promise.race([stopPromise, timeoutPromise]);
+      if (!stopped) {
+        console.warn("pgServer.stop() timed out after 15s; force-killing postgres process tree...");
+        const pid = pgServer.process?.pid;
+        if (pid && process.platform === "win32") {
+          try {
+            execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
+          } catch {}
+        }
+      }
+    } catch {
+      const pid = pgServer.process?.pid;
+      if (pid && process.platform === "win32") {
+        try {
+          execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
+        } catch {}
+      }
+    }
+  }
+
+  // 4. Delete data directory
+  try {
+    if (tempPgDir && fs.existsSync(tempPgDir)) {
+      fs.rmSync(tempPgDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      console.log(`Temporary Postgres data directory removed: ${tempPgDir}`);
+    }
+  } catch (err) {
+    console.warn("Could not delete temporary Postgres data directory:", err);
+  }
+
+  console.log(`✓ Leads-api cleanup finished with exit code ${exitCode}.`);
+  process.exit(exitCode);
 }
 
 function spawnNextServer(port: number, env: NodeJS.ProcessEnv) {
@@ -70,9 +182,9 @@ async function runSuite() {
 
   // 2. Start Disposable Test Postgres Cluster
   console.log("--- 2. Starting Disposable Postgres Cluster ---");
-  const pgServer = new EmbeddedPostgres({
+  pgServer = new EmbeddedPostgres({
     port: PG_PORT,
-    databaseDir: "./.test-pg-data",
+    databaseDir: tempPgDir,
     user: "postgres",
     password: "password",
     persistent: false,
@@ -102,17 +214,19 @@ async function runSuite() {
     encoding: "utf8",
   });
 
-  const adapter = new PrismaPg({ connectionString: TEST_DB_URL });
-  const prisma = new PrismaClient({ adapter });
+  testPool = new pg.Pool({ connectionString: TEST_DB_URL });
+  const adapter = new PrismaPg(testPool);
+  prisma = new PrismaClient({ adapter });
   await runSeed(prisma);
   console.log("✓ Migrations deployed and database seeded.\n");
 
   // 3. Start Mock Resend HTTP Server
   console.log("--- 3. Starting Mock Resend Server ---");
   let mockResendShouldFail = false;
+  let mockResendShouldHang = false;
   const receivedResendRequests: Array<{ headers: http.IncomingHttpHeaders; body: any }> = [];
 
-  const mockResendServer = http.createServer((req, res) => {
+  mockResendServer = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
@@ -121,6 +235,11 @@ async function runSuite() {
         parsed = JSON.parse(body);
       } catch {}
       receivedResendRequests.push({ headers: req.headers, body: parsed });
+
+      if (mockResendShouldHang) {
+        // Never reply: simulate a hung server causing the 5000ms client timeout
+        return;
+      }
 
       if (mockResendShouldFail) {
         res.writeHead(500, { "Content-Type": "application/json" });
@@ -132,17 +251,8 @@ async function runSuite() {
     });
   });
 
-  await new Promise<void>((resolve) => mockResendServer.listen(MOCK_RESEND_PORT, resolve));
+  await new Promise<void>((resolve) => mockResendServer!.listen(MOCK_RESEND_PORT, resolve));
   console.log(`Mock Resend server listening on http://127.0.0.1:${MOCK_RESEND_PORT}\n`);
-
-  let prodServer: ChildProcess | null = null;
-  let devServer: ChildProcess | null = null;
-  let secretFailServer: ChildProcess | null = null;
-  let timeoutServer: ChildProcess | null = null;
-  let missingToServer: ChildProcess | null = null;
-  let noResendServer: ChildProcess | null = null;
-  let connRefusedServer: ChildProcess | null = null;
-  let hangTcpServer: net.Server | null = null;
 
   try {
     // 4. Start Production Server (`next start -p 3005`)
@@ -175,6 +285,7 @@ async function runSuite() {
       rawText?: string;
       headers?: Record<string, string>;
       port?: number;
+      omitOrigin?: boolean;
     }) => {
       const port = options.port || PROD_PORT;
       const headers: Record<string, string> = {
@@ -183,6 +294,9 @@ async function runSuite() {
         "user-agent": "Mozilla/5.0 HttpTestSuite/1.0",
         ...(options.headers || {}),
       };
+      if (options.omitOrigin) {
+        delete headers.origin;
+      }
 
       const bodyText =
         options.rawText !== undefined
@@ -849,6 +963,57 @@ async function runSuite() {
     assert.strictEqual(failMeta.email, undefined);
     assert.strictEqual(failMeta.message, undefined);
 
+    // (ii-b) Mock server never responds -> visitor gets 201 quickly (<500ms), and notify_failed logged after 5s timeout
+    console.log("\n[Subcase: Mock Resend Never Responds (Hang / Timeout)]");
+    mockResendShouldHang = true;
+    mockResendShouldFail = false;
+    receivedResendRequests.length = 0;
+
+    const hangClientStart = Date.now();
+    const resEmailHang = await requestApi({
+      body: {
+        name: "Hang Notification Tester",
+        email: "hang.notify@example.com",
+        phone: "+91 7510109730",
+        message: "Message during hang",
+        elapsedMs: 3500,
+      },
+      headers: { "x-forwarded-for": "10.0.9.3" },
+    });
+    const hangClientDuration = Date.now() - hangClientStart;
+    console.log(`Visitor response status: ${resEmailHang.status}`);
+    console.log(`Visitor response latency: ${hangClientDuration}ms (must be < 500ms)`);
+    assert.strictEqual(resEmailHang.status, 201);
+    assert.ok(
+      hangClientDuration < 500,
+      `Visitor response must be < 500ms, got ${hangClientDuration}ms`
+    );
+
+    // Wait for the 5000ms fetch timeout in notify.ts + background processing (~5500ms)
+    console.log("Waiting for background notify.ts 5000ms timeout...");
+    const timeoutWaitStart = Date.now();
+    await new Promise((r) => setTimeout(r, 5500));
+    console.log(`Waited ${Date.now() - timeoutWaitStart}ms for timeout handling to settle.`);
+
+    const hangLead = await prisma.lead.findFirst({
+      where: { email: "hang.notify@example.com" },
+    });
+    assert.ok(hangLead);
+
+    const hangFailLog = await prisma.activityLog.findFirst({
+      where: { action: "lead.notify_failed", entityId: hangLead.id },
+    });
+    assert.ok(hangFailLog, "lead.notify_failed ActivityLog entry must exist after timeout");
+    console.log("lead.notify_failed ActivityLog entry for timeout:");
+    console.dir(hangFailLog, { depth: null });
+
+    const hangMeta = hangFailLog.metadata as Record<string, unknown>;
+    assert.strictEqual(hangMeta.name, undefined);
+    assert.strictEqual(hangMeta.email, undefined);
+    assert.strictEqual(hangMeta.message, undefined);
+
+    mockResendShouldHang = false;
+
     // (iii) When RESEND_API_KEY is set but LEAD_NOTIFICATION_TO is unset, mock server receives ZERO requests
     console.log("\nTesting RESEND_API_KEY set but LEAD_NOTIFICATION_TO unset...");
     receivedResendRequests.length = 0;
@@ -941,18 +1106,18 @@ async function runSuite() {
     console.log("✓ TEST 8 PASSED: Resend notification fields, failure handling, and disabled state verified.\n");
 
     // =========================================================================
-    // TEST 9: Origin Check via ALLOWED_ORIGINS (T6)
+    // TEST 9: Origin Check & NEXT_PUBLIC_SITE_URL Guard (T3)
     // =========================================================================
-    console.log("--- TEST 9: Origin Verification via ALLOWED_ORIGINS (T6) ---");
+    console.log("--- TEST 9: Origin Check & NEXT_PUBLIC_SITE_URL Guard (T3) ---");
     console.log("Origin Check Function (from src/app/api/leads/route.ts):");
-    console.log(`function isAllowedOrigin(headerValue: string | null, siteUrl: string, allowedOriginsEnv?: string): boolean {
+    console.log(`function isAllowedOrigin(headerValue: string | null, siteUrlOrigin: string, allowedOriginsEnv?: string): boolean {
   if (!headerValue) return true;
   try {
     const parsedTarget = new URL(headerValue);
     const targetOrigin = parsedTarget.origin;
     if (!targetOrigin || targetOrigin === "null") return false;
     const allowedSet = new Set<string>();
-    try { allowedSet.add(new URL(siteUrl).origin); } catch {}
+    allowedSet.add(siteUrlOrigin);
     if (allowedOriginsEnv) {
       for (const item of allowedOriginsEnv.split(",")) {
         const trimmed = item.trim();
@@ -965,44 +1130,117 @@ async function runSuite() {
   } catch { return false; }
 }`);
 
-    devServer = spawnNextServer(DEV_PORT, {
+    // (a) Subdomain suffix attack: https://akzqcreation.com.evil.example -> 403
+    const resEvilSubdomain = await requestApi({
+      body: { name: "Evil Origin", email: "evil@example.com", elapsedMs: 3000 },
+      headers: {
+        origin: "https://akzqcreation.com.evil.example",
+        "x-forwarded-for": "198.51.100.101",
+      },
+    });
+    console.log(`Subdomain Suffix (https://akzqcreation.com.evil.example) Status: ${resEvilSubdomain.status}`);
+    assert.strictEqual(resEvilSubdomain.status, 403);
+
+    // (b) Scheme mismatch: http://akzqcreation.com -> 403
+    const resHttpOrigin = await requestApi({
+      body: { name: "Http Origin", email: "http@example.com", elapsedMs: 3000 },
+      headers: {
+        origin: "http://akzqcreation.com",
+        "x-forwarded-for": "198.51.100.102",
+      },
+    });
+    console.log(`Http Scheme Mismatch (http://akzqcreation.com) Status: ${resHttpOrigin.status}`);
+    assert.strictEqual(resHttpOrigin.status, 403);
+
+    // (c) Host mismatch: https://www.akzqcreation.com -> 403
+    const resWwwOrigin = await requestApi({
+      body: { name: "Www Origin", email: "www@example.com", elapsedMs: 3000 },
+      headers: {
+        origin: "https://www.akzqcreation.com",
+        "x-forwarded-for": "198.51.100.103",
+      },
+    });
+    console.log(`Www Host Mismatch (https://www.akzqcreation.com) Status: ${resWwwOrigin.status}`);
+    assert.strictEqual(resWwwOrigin.status, 403);
+
+    // (d) Malformed origin string -> 403
+    const resMalformedOrigin = await requestApi({
+      body: { name: "Malformed Origin", email: "malformed@example.com", elapsedMs: 3000 },
+      headers: {
+        origin: "not-a-valid-origin",
+        "x-forwarded-for": "198.51.100.104",
+      },
+    });
+    console.log(`Malformed Origin ("not-a-valid-origin") Status: ${resMalformedOrigin.status}`);
+    assert.strictEqual(resMalformedOrigin.status, 403);
+
+    // (e) Listed extra origin in ALLOWED_ORIGINS -> 201
+    const resExtraOrigin = await requestApi({
+      body: { name: "Extra Origin", email: "extra.origin@example.com", elapsedMs: 3000 },
+      headers: {
+        origin: "https://preview.akzqcreation.com",
+        "x-forwarded-for": "198.51.100.105",
+      },
+    });
+    console.log(`Listed Extra Origin (https://preview.akzqcreation.com) Status: ${resExtraOrigin.status}`);
+    assert.strictEqual(resExtraOrigin.status, 201);
+
+    // (f) Absent origin -> 201 (cURL / direct navigation without Origin header)
+    const resAbsentOrigin = await requestApi({
+      body: { name: "Absent Origin", email: "absent.origin@example.com", elapsedMs: 3000 },
+      omitOrigin: true,
+      headers: {
+        "x-forwarded-for": "198.51.100.106",
+      },
+    });
+    console.log(`Absent Origin Header Status: ${resAbsentOrigin.status}`);
+    assert.strictEqual(resAbsentOrigin.status, 201);
+
+    // (g) Unset NEXT_PUBLIC_SITE_URL -> Fail loudly (503)
+    console.log("\nTesting server with NEXT_PUBLIC_SITE_URL unset (empty)...");
+    const portNoSiteUrl = 3016;
+    noSiteUrlServer = spawnNextServer(portNoSiteUrl, {
       ...process.env,
-      PORT: String(DEV_PORT),
+      PORT: String(portNoSiteUrl),
       NODE_ENV: "production",
-      ALLOWED_ORIGINS: `http://localhost:${DEV_PORT}`,
       DATABASE_URL: TEST_DB_URL,
       DIRECT_URL: TEST_DB_URL,
       IP_HASH_SECRET: TEST_SECRET,
-      NEXT_PUBLIC_SITE_URL: "https://akzqcreation.com",
+      NEXT_PUBLIC_SITE_URL: "", // deliberately unset!
     });
-
-    const isDevReady = await waitForServer(DEV_PORT);
-    assert.ok(isDevReady, "Dev server failed to start");
-
-    // Subcase 1: Origin in ALLOWED_ORIGINS -> 201
-    const resAllowedOrigin = await requestApi({
-      port: DEV_PORT,
-      body: { name: "Allowed Origin User", email: "allowed.origin@example.com", elapsedMs: 3000 },
-      headers: {
-        origin: `http://localhost:${DEV_PORT}`,
-        "x-forwarded-for": "198.51.100.99",
-      },
+    assert.ok(await waitForServer(portNoSiteUrl), "No-site-url server failed to start");
+    const resNoSiteUrl = await requestApi({
+      port: portNoSiteUrl,
+      body: { name: "No Site URL User", email: "nositeurl@example.com", elapsedMs: 3000 },
     });
-    console.log(`Allowed Origin (http://localhost:${DEV_PORT}) Status: ${resAllowedOrigin.status}`);
-    assert.strictEqual(resAllowedOrigin.status, 201);
+    console.log(`Unset NEXT_PUBLIC_SITE_URL Status: ${resNoSiteUrl.status}`);
+    assert.strictEqual(resNoSiteUrl.status, 503);
+    killProcessTree(noSiteUrlServer);
+    noSiteUrlServer = null;
 
-    // Subcase 2: Unlisted Origin -> 403
-    const resDisallowedOrigin = await requestApi({
-      port: DEV_PORT,
-      body: { name: "Disallowed Origin User", email: "disallowed.origin@example.com", elapsedMs: 3000 },
-      headers: {
-        origin: `http://localhost:9999`,
-        "x-forwarded-for": "198.51.100.100",
-      },
+    // (h) Invalid NEXT_PUBLIC_SITE_URL -> Fail loudly (503)
+    console.log("\nTesting server with NEXT_PUBLIC_SITE_URL invalid ('not-a-valid-url')...");
+    const portInvalidSiteUrl = 3017;
+    invalidSiteUrlServer = spawnNextServer(portInvalidSiteUrl, {
+      ...process.env,
+      PORT: String(portInvalidSiteUrl),
+      NODE_ENV: "production",
+      DATABASE_URL: TEST_DB_URL,
+      DIRECT_URL: TEST_DB_URL,
+      IP_HASH_SECRET: TEST_SECRET,
+      NEXT_PUBLIC_SITE_URL: "not-a-valid-url", // deliberately invalid!
     });
-    console.log(`Unlisted Origin (http://localhost:9999) Status: ${resDisallowedOrigin.status}`);
-    assert.strictEqual(resDisallowedOrigin.status, 403);
-    console.log("✓ TEST 9 PASSED: Origin strictly verified against ALLOWED_ORIGINS.\n");
+    assert.ok(await waitForServer(portInvalidSiteUrl), "Invalid-site-url server failed to start");
+    const resInvalidSiteUrl = await requestApi({
+      port: portInvalidSiteUrl,
+      body: { name: "Invalid Site URL User", email: "invalidsiteurl@example.com", elapsedMs: 3000 },
+    });
+    console.log(`Invalid NEXT_PUBLIC_SITE_URL Status: ${resInvalidSiteUrl.status}`);
+    assert.strictEqual(resInvalidSiteUrl.status, 503);
+    killProcessTree(invalidSiteUrlServer);
+    invalidSiteUrlServer = null;
+
+    console.log("✓ TEST 9 PASSED: All origin cases and NEXT_PUBLIC_SITE_URL guard verified.\n");
 
     // =========================================================================
     // TEST 10: Secret Validation Check (T2: Empty, 31 chars, placeholder -> 503)
@@ -1167,40 +1405,18 @@ async function runSuite() {
     connRefusedServer = null;
     console.log("✓ TEST 12 PASSED: Connection refused cleanly returns 503 with standard error.\n");
 
-  } finally {
-    console.log("Cleaning up servers and resources...");
-    killProcessTree(prodServer);
-    killProcessTree(devServer);
-    killProcessTree(secretFailServer);
-    killProcessTree(timeoutServer);
-    killProcessTree(missingToServer);
-    killProcessTree(noResendServer);
-    killProcessTree(connRefusedServer);
-    if (hangTcpServer) {
-      try {
-        hangTcpServer.close();
-      } catch {}
-    }
-    if (mockResendServer) {
-      try {
-        mockResendServer.close();
-      } catch {}
-    }
-    try {
-      await prisma.$disconnect();
-    } catch {}
-    try {
-      await pgServer.stop();
-    } catch {}
-    console.log("✓ All servers and processes terminated cleanly.");
-  }
+    console.log("\n========================================================");
+    console.log("ALL REAL PRODUCTION-SERVER LEADS API TESTS PASSED CLEANLY");
+    console.log("========================================================\n");
 
-  console.log("\n========================================================");
-  console.log("ALL REAL PRODUCTION-SERVER LEADS API TESTS PASSED CLEANLY");
-  console.log("========================================================\n");
+    await cleanupAndExit(0);
+  } catch (err) {
+    console.error("LEADS API HTTP TEST SUITE FAILED:", err);
+    await cleanupAndExit(1);
+  }
 }
 
-runSuite().catch((err) => {
-  console.error("LEADS API HTTP TEST SUITE FAILED:", err);
-  process.exit(1);
+runSuite().catch(async (err) => {
+  console.error("FATAL SUITE ERROR:", err);
+  await cleanupAndExit(1);
 });

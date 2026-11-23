@@ -15,7 +15,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:test": "tsx tests/db.test.ts",
     "test:leads": "tsx tests/leads-api.test.ts",
-    "leads:list": "tsx scripts/leads-list.ts"
+    "leads:list": "tsx scripts/leads-list.ts",
+    "verify": "node scripts/verify-all.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

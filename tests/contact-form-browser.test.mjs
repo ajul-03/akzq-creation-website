@@ -1,5 +1,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { spawn, execSync } from "node:child_process";
 import http from "node:http";
 import pg from "pg";
@@ -9,10 +11,103 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import EmbeddedPostgres from "embedded-postgres";
 
 const BROWSER_PORT = 3009;
-const PG_PORT = 54333;
+const PG_PORT = 54334;
 const TEST_DB_NAME = "akzq_browser_test_db";
 const TEST_DB_URL = `postgresql://postgres:password@127.0.0.1:${PG_PORT}/${TEST_DB_NAME}`;
 const TEST_SECRET = "super-secret-browser-test-salt-32-chars!";
+
+// Fresh data directory under os.tmpdir() (never in project folder or synced directory)
+const tempPgDir = fs.mkdtempSync(path.join(os.tmpdir(), "akzq-browser-test-"));
+console.log(`Disposable Postgres temporary data directory: ${tempPgDir}`);
+console.log(`Disposable Postgres port: ${PG_PORT}\n`);
+
+let testPool = null;
+let prisma = null;
+let pgServer = null;
+let server = null;
+let browser = null;
+
+// Hard watchdog: 5 minutes
+const WATCHDOG_MS = 5 * 60 * 1000;
+const watchdog = setTimeout(() => {
+  console.error(`\n❌ HARD WATCHDOG TIMEOUT (5 min): tests/contact-form-browser.test.mjs exceeded limit. Forcing cleanup & exit.`);
+  void cleanupAndExit(1);
+}, WATCHDOG_MS);
+watchdog.unref();
+
+function killProcessTree(proc) {
+  if (!proc || !proc.pid) return;
+  try {
+    if (process.platform === "win32") {
+      execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: "ignore" });
+    } else {
+      proc.kill("SIGKILL");
+    }
+  } catch {}
+}
+
+async function cleanupAndExit(exitCode) {
+  clearTimeout(watchdog);
+  console.log("\nStarting robust browser test cleanup sequence...");
+
+  if (browser) {
+    try {
+      await browser.close();
+    } catch {}
+  }
+
+  killProcessTree(server);
+
+  if (prisma) {
+    try {
+      await prisma.$disconnect();
+    } catch {}
+  }
+  if (testPool) {
+    try {
+      await testPool.end();
+    } catch {}
+  }
+
+  if (pgServer) {
+    try {
+      let stopped = false;
+      const stopPromise = pgServer.stop().then(() => {
+        stopped = true;
+      });
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 15000));
+      await Promise.race([stopPromise, timeoutPromise]);
+      if (!stopped) {
+        console.warn("pgServer.stop() timed out after 15s; force-killing postgres process tree...");
+        const pid = pgServer.process?.pid;
+        if (pid && process.platform === "win32") {
+          try {
+            execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
+          } catch {}
+        }
+      }
+    } catch {
+      const pid = pgServer.process?.pid;
+      if (pid && process.platform === "win32") {
+        try {
+          execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
+        } catch {}
+      }
+    }
+  }
+
+  try {
+    if (tempPgDir && fs.existsSync(tempPgDir)) {
+      fs.rmSync(tempPgDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      console.log(`Temporary Postgres data directory removed: ${tempPgDir}`);
+    }
+  } catch (err) {
+    console.warn("Could not delete temporary Postgres data directory:", err);
+  }
+
+  console.log(`✓ Browser test cleanup finished with exit code ${exitCode}.`);
+  process.exit(exitCode);
+}
 
 function waitForServer(port, timeoutMs = 30000) {
   const start = Date.now();
@@ -33,25 +128,14 @@ function waitForServer(port, timeoutMs = 30000) {
   });
 }
 
-function killProcessTree(proc) {
-  if (!proc || !proc.pid) return;
-  try {
-    if (process.platform === "win32") {
-      execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: "ignore" });
-    } else {
-      proc.kill("SIGKILL");
-    }
-  } catch {}
-}
-
 async function runBrowserTest() {
   console.log("=== RUNNING HEADLESS CHROMIUM CONTACT FORM BROWSER TEST ===\n");
 
   // 1. Start Disposable Postgres Cluster
   console.log("--- 1. Starting Disposable Postgres Cluster for Browser Test ---");
-  const pgServer = new EmbeddedPostgres({
+  pgServer = new EmbeddedPostgres({
     port: PG_PORT,
-    databaseDir: "./.test-pg-browser-data",
+    databaseDir: tempPgDir,
     user: "postgres",
     password: "password",
     persistent: false,
@@ -83,12 +167,13 @@ async function runBrowserTest() {
   });
   console.log("✓ Database initialized and seeded.\n");
 
-  const adapter = new PrismaPg({ connectionString: TEST_DB_URL });
-  const prisma = new PrismaClient({ adapter });
+  testPool = new pg.Pool({ connectionString: TEST_DB_URL });
+  const adapter = new PrismaPg(testPool);
+  prisma = new PrismaClient({ adapter });
 
   // 2. Spawn Next.js Production Server
   console.log("--- 2. Starting Next.js Server on port " + BROWSER_PORT + " ---");
-  const server = spawn("npx", ["next", "start", "-p", String(BROWSER_PORT)], {
+  server = spawn("npx", ["next", "start", "-p", String(BROWSER_PORT)], {
     shell: true,
     env: {
       ...process.env,
@@ -106,8 +191,6 @@ async function runBrowserTest() {
   const isReady = await waitForServer(BROWSER_PORT);
   assert.ok(isReady, `Server failed to respond on port ${BROWSER_PORT}`);
   console.log(`✓ Next.js server ready at http://127.0.0.1:${BROWSER_PORT}\n`);
-
-  let browser;
   try {
     // 3. Launch Headless Chromium via Playwright
     console.log("--- 3. Launching Headless Chromium ---");
@@ -307,8 +390,8 @@ async function runBrowserTest() {
     assert.strictEqual(await fallback429.isVisible(), true, "Fallback error must appear on 429");
     const fallbackText429 = await fallback429.innerText();
     console.log("Fallback Error Text on 429:\n" + fallbackText429);
-    assert.ok(fallbackText429.includes("+91 75101 09730"));
-    assert.ok(fallbackText429.includes("WhatsApp"));
+    const expectedFallback = "We couldn't send your message just now. Please call +91 75101 09730 or message us on WhatsApp.";
+    assert.strictEqual(fallbackText429, expectedFallback, "Fallback text must match T2 string verbatim");
 
     const telLink429 = await fallback429.locator('a[href^="tel:"]').getAttribute("href");
     const waLink429 = await fallback429.locator('a[href*="wa.me"]').getAttribute("href");
@@ -340,6 +423,7 @@ async function runBrowserTest() {
     assert.strictEqual(await fallback503.isVisible(), true);
     const fallbackText503 = await fallback503.innerText();
     console.log("Fallback Error Text on 503:\n" + fallbackText503);
+    assert.strictEqual(fallbackText503, expectedFallback, "Fallback text must match T2 string verbatim");
     const telLink503 = await fallback503.locator('a[href^="tel:"]').getAttribute("href");
     const waLink503 = await fallback503.locator('a[href*="wa.me"]').getAttribute("href");
     console.log(`Fallback 503 tel href:   ${telLink503}`);
@@ -367,6 +451,7 @@ async function runBrowserTest() {
     assert.strictEqual(await fallbackOffline.isVisible(), true);
     const fallbackTextOffline = await fallbackOffline.innerText();
     console.log("Fallback Error Text on Offline Failure:\n" + fallbackTextOffline);
+    assert.strictEqual(fallbackTextOffline, expectedFallback, "Fallback text must match T2 string verbatim");
     const telLinkOffline = await fallbackOffline.locator('a[href^="tel:"]').getAttribute("href");
     const waLinkOffline = await fallbackOffline.locator('a[href*="wa.me"]').getAttribute("href");
     console.log(`Fallback offline tel href:   ${telLinkOffline}`);
@@ -405,15 +490,24 @@ async function runBrowserTest() {
     await page.click('button[type="submit"]', { noWaitAfter: true });
     await page.waitForTimeout(600);
 
-    const emailErrorLocator = page.locator(".form-group:has(#clientEmail) .form-error");
-    await emailErrorLocator.waitFor({ state: "visible", timeout: 5000 });
-    const displayedEmailError = await emailErrorLocator.innerText();
+    const errorLocator = page.locator("#formValidationError");
+    await errorLocator.waitFor({ state: "visible", timeout: 5000 });
+    const displayedError = await errorLocator.innerText();
 
-    console.log(`Legacy Validation Message Source: "${legacyJsAlert}"`);
-    console.log(`Browser-Displayed Field Error:   "${displayedEmailError}"`);
-    assert.ok(legacyJsAlert.includes("Email"), "Legacy alert must mention Email");
-    assert.strictEqual(displayedEmailError, "Please fill in your Email.");
-    console.log("✓ TASK 4 PASSED: Real server 400 maps field to legacy validation message and ignores server strings.\n");
+    console.log(`Programmatically Extracted String: "${legacyJsAlert}"`);
+    console.log(`Browser-Displayed DOM Text:       "${displayedError}"`);
+    assert.strictEqual(
+      displayedError,
+      legacyJsAlert,
+      "Displayed validation text must match extracted assets/js/contact.js alert string verbatim"
+    );
+
+    // Verify aria-invalid and styling on invalid field, and no field-level text
+    const ariaInvalid = await page.locator("#clientEmail").getAttribute("aria-invalid");
+    assert.strictEqual(ariaInvalid, "true", "Invalid field must have aria-invalid='true'");
+    const fieldLevelSpans = await page.locator(".form-group span.form-error").count();
+    assert.strictEqual(fieldLevelSpans, 0, "There must be NO new field-level text");
+    console.log("✓ TASK 4 PASSED: Real server 400 displays legacy message once per form with aria-invalid.\n");
 
     // =========================================================================
     // TASK 1: Browser Referrer & UTM Test
@@ -496,25 +590,18 @@ async function runBrowserTest() {
     console.table(freshLeadRows);
     console.log("✓ TASK 11 PASSED: Lead table queried and printed.\n");
 
-  } finally {
-    console.log("Cleaning up browser test resources...");
-    if (browser) await browser.close();
-    killProcessTree(server);
-    try {
-      await prisma.$disconnect();
-    } catch {}
-    try {
-      await pgServer.stop();
-    } catch {}
-    console.log("✓ Browser test cleanup finished.");
-  }
+    console.log("\n========================================================");
+    console.log("HEADLESS BROWSER FORM TESTS ALL PASSED CLEANLY");
+    console.log("========================================================\n");
 
-  console.log("\n========================================================");
-  console.log("HEADLESS BROWSER FORM TESTS ALL PASSED CLEANLY");
-  console.log("========================================================\n");
+    await cleanupAndExit(0);
+  } catch (err) {
+    console.error("BROWSER TEST FAILED:", err);
+    await cleanupAndExit(1);
+  }
 }
 
-runBrowserTest().catch((err) => {
-  console.error("BROWSER TEST FAILED:", err);
-  process.exit(1);
+runBrowserTest().catch(async (err) => {
+  console.error("FATAL BROWSER SUITE ERROR:", err);
+  await cleanupAndExit(1);
 });
