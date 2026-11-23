@@ -12,12 +12,12 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 |---|---|---|---|
 | `DATABASE_URL` | **Yes** | Neon pooled Postgres connection string with SSL (used by Prisma Client runtime) | `postgresql://user:pass@ep-pooler.neon.tech/neondb?sslmode=require` |
 | `DIRECT_URL` | **Yes** | Neon direct (non-pooled) connection string (MUST be used for migrations and schema operations) | `postgresql://user:pass@ep-direct.neon.tech/neondb?sslmode=require` |
-| `IP_HASH_SECRET` | **Yes** | High-entropy secret key for HMAC-SHA256 IP hashing under India's DPDP Act (MUST be at least 32 characters) | `openssl rand -hex 32` |
+| `IP_HASH_SECRET` | **Yes** | High-entropy secret key for privacy-minded design (IP hashing); legal review of the notice and retention is the owner's responsibility (MUST be at least 32 characters) | `openssl rand -hex 32` |
 | `NEXT_PUBLIC_SITE_URL` | **Yes** | Canonical public site URL (used for CORS and canonical tags) | `https://akzqcreation.com` |
 | `ALLOWED_ORIGINS` | Optional | Comma-separated list of additional allowed origins for `/api/leads`. Note: `www` subdomain should redirect to apex (`https://akzqcreation.com`) at DNS/host level; preview deployments are not allowed by default unless explicitly listed here | `https://preview.example.com` |
 | `RESEND_API_KEY` | Optional | API key for Resend email notifications (default: disabled if unset) | `re_123456789...` |
-| `LEAD_NOTIFICATION_TO` | Optional | Recipient email address for new lead notifications (must be set alongside `RESEND_API_KEY` and `LEAD_NOTIFICATION_FROM` to enable email alerts) | `notifications@akzqcreation.com` |
-| `LEAD_NOTIFICATION_FROM` | Optional | Verified sending email address on Resend (must use a verified domain) | `leads@akzqcreation.com` |
+| `LEAD_NOTIFICATION_TO` | Optional | Recipient email address for new lead notifications (must be set alongside `RESEND_API_KEY` and `LEAD_NOTIFICATION_FROM` to enable email alerts) | `you@example.com` |
+| `LEAD_NOTIFICATION_FROM` | Optional | Verified sending email address on Resend (must use a verified domain) | `leads@example.com` |
 | `RESEND_BASE_URL` | Optional | Custom base URL for Resend API (default: https://api.resend.com, useful for mock servers or proxying) | `https://api.resend.com` |
 
 > [!IMPORTANT]
@@ -28,7 +28,7 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 
 ## 2. Security & Abuse Defense Guarantees
 
-1. **Zero Raw IP Storage (India's DPDP Act Compliance)**:
+1. **Zero Raw IP Storage (privacy-minded design (IP hashing); legal review of the notice and retention is the owner's responsibility)**:
    - Client IP addresses are never written to the database.
    - All IPs are hashed using `crypto.createHmac("sha256", IP_HASH_SECRET).update(ip).digest("hex")`.
    - The route strictly enforces that `IP_HASH_SECRET` is set and at least 32 characters, and does not start with `"replace-with"`; if invalid, it aborts with HTTP 503 and never hashes with an empty or insecure key.
@@ -83,8 +83,8 @@ Follow this strict deployment order:
      - `NEXT_PUBLIC_SITE_URL` (`https://akzqcreation.com`)
      - *(Optional)* `ALLOWED_ORIGINS` (e.g. for preview domains)
      - *(Optional)* `RESEND_API_KEY` (if email notifications enabled)
-     - *(Optional)* `LEAD_NOTIFICATION_TO` (`notifications@akzqcreation.com`)
-     - *(Optional)* `LEAD_NOTIFICATION_FROM` (`leads@akzqcreation.com`)
+     - *(Optional)* `LEAD_NOTIFICATION_TO` (`you@example.com`)
+     - *(Optional)* `LEAD_NOTIFICATION_FROM` (`leads@example.com`)
 
 5. **Step 5: Deploy Application to Vercel**
    - > [!WARNING]
@@ -103,7 +103,7 @@ Follow this strict deployment order:
      2. **Verify Contact Form Load**:
         Open `https://akzqcreation.com/contact` in a browser. Confirm the page and form render with 0 console errors and 0 CSP violations.
      3. **Submit One Test Lead & Delete It**:
-        Submit a test lead to a non-production Neon staging/test branch or directly with a designated test email:
+        Submit one test lead ONLY to a non-production Neon branch (never to production):
         ```bash
         curl -i -X POST https://akzqcreation.com/api/leads \
           -H "Content-Type: application/json" \
