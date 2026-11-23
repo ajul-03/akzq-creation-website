@@ -130,9 +130,22 @@ const LeadInputSchema = z.object({
   elapsedMs: z.number().optional(),
 });
 
+function getClientIp(request: Request | NextRequest): {
+  ip: string | null;
+  isUnknown: boolean;
+  identifier: string;
+} {
+  const forwarded = request.headers.get("x-forwarded-for");
+  const firstForwardedIp = forwarded ? forwarded.split(",")[0].trim() : null;
+  const rawIp = firstForwardedIp || request.headers.get("x-real-ip") || null;
+  const isUnknown = !rawIp;
+  const identifier = isUnknown ? "unknown-client-ip" : rawIp;
+  return { ip: rawIp, isUnknown, identifier };
+}
+
 function isAllowedOrigin(
   headerValue: string | null,
-  siteUrl: string,
+  siteUrlOrigin: string,
   allowedOriginsEnv?: string
 ): boolean {
   if (!headerValue) return true; // Direct clients / cURL with no origin header are permitted
@@ -142,9 +155,7 @@ function isAllowedOrigin(
     if (!targetOrigin || targetOrigin === "null") return false;
 
     const allowedSet = new Set<string>();
-    try {
-      allowedSet.add(new URL(siteUrl).origin);
-    } catch {}
+    allowedSet.add(siteUrlOrigin);
 
     if (allowedOriginsEnv) {
       for (const item of allowedOriginsEnv.split(",")) {
@@ -237,11 +248,40 @@ export async function POST(request: NextRequest) {
   }
 
   // 2. Rejection: Origin / Referer check (403)
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!siteUrl) {
+    console.error("Configuration error: NEXT_PUBLIC_SITE_URL environment variable is missing.");
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Service temporarily unavailable. Please try again or reach us directly.",
+      },
+      { status: 503, headers: noStoreHeaders }
+    );
+  }
+
+  let siteUrlOrigin: string;
+  try {
+    const parsedSiteUrl = new URL(siteUrl);
+    if (!parsedSiteUrl.protocol || !parsedSiteUrl.host) {
+      throw new Error("Invalid URL components");
+    }
+    siteUrlOrigin = parsedSiteUrl.origin;
+  } catch (err) {
+    console.error(`Configuration error: NEXT_PUBLIC_SITE_URL is invalid ('${siteUrl}'):`, err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Service temporarily unavailable. Please try again or reach us directly.",
+      },
+      { status: 503, headers: noStoreHeaders }
+    );
+  }
+
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://akzqcreation.com";
   const targetHeader = origin || referer;
-  if (!isAllowedOrigin(targetHeader, siteUrl, process.env.ALLOWED_ORIGINS)) {
+  if (!isAllowedOrigin(targetHeader, siteUrlOrigin, process.env.ALLOWED_ORIGINS)) {
     return NextResponse.json(
       { ok: false, error: "Forbidden: Origin or Referer not allowed" },
       { status: 403, headers: noStoreHeaders }
@@ -313,11 +353,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Extract client IP and hash via HMAC; use shared "unknown" bucket if IP missing
-  const forwarded = request.headers.get("x-forwarded-for");
-  const firstForwardedIp = forwarded ? forwarded.split(",")[0].trim() : null;
-  const rawIp = firstForwardedIp || request.headers.get("x-real-ip");
-  const isUnknownIp = !rawIp;
-  const clientIdentifier = isUnknownIp ? "unknown-client-ip" : rawIp;
+  const { isUnknown: isUnknownIp, identifier: clientIdentifier } = getClientIp(request);
   const ipHash = hashIp(clientIdentifier, secret);
 
   try {
