@@ -144,9 +144,15 @@ export function ClientScriptManager() {
         e.preventDefault();
 
         // Remove any prior error notification and field errors
-        const oldErr = document.getElementById("formFallbackError");
-        if (oldErr) oldErr.remove();
+        const oldFallbackErr = document.getElementById("formFallbackError");
+        if (oldFallbackErr) oldFallbackErr.remove();
+        const oldValErr = document.getElementById("formValidationError");
+        if (oldValErr) oldValErr.remove();
         form.querySelectorAll(".form-error").forEach((el) => el.remove());
+        form.querySelectorAll('[aria-invalid="true"]').forEach((el) => {
+          el.removeAttribute("aria-invalid");
+          (el as HTMLElement).style.borderColor = "";
+        });
 
         const name = (form.querySelector('[name="name"]') as HTMLInputElement)?.value.trim();
         const email = (form.querySelector('[name="email"]') as HTMLInputElement)?.value.trim();
@@ -159,6 +165,39 @@ export function ClientScriptManager() {
         const message = (form.querySelector('[name="details"]') as HTMLTextAreaElement)?.value.trim() || null;
         const hp_field = (form.querySelector('[name="hp_field"]') as HTMLInputElement)?.value || "";
         const elapsedMs = Date.now() - formRenderTime;
+
+        if (!name || !email || !service) {
+          if (!name) {
+            const input = form.querySelector('[name="name"]') as HTMLElement | null;
+            if (input) {
+              input.setAttribute("aria-invalid", "true");
+              input.style.borderColor = "#e53e3e";
+            }
+          }
+          if (!email) {
+            const input = form.querySelector('[name="email"]') as HTMLElement | null;
+            if (input) {
+              input.setAttribute("aria-invalid", "true");
+              input.style.borderColor = "#e53e3e";
+            }
+          }
+          if (!service) {
+            const input = form.querySelector('[name="service"]') as HTMLElement | null;
+            if (input) {
+              input.setAttribute("aria-invalid", "true");
+              input.style.borderColor = "#e53e3e";
+            }
+          }
+
+          const valDiv = document.createElement("div");
+          valDiv.id = "formValidationError";
+          valDiv.className = "form-error";
+          valDiv.style.cssText =
+            "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
+          valDiv.textContent = "Please fill in your Name, Email, and select the Required Service.";
+          form.insertBefore(valDiv, form.firstChild);
+          return;
+        }
 
         const urlParams = new URLSearchParams(window.location.search);
         const utmSource = urlParams.get("utm_source") || null;
@@ -219,44 +258,40 @@ export function ClientScriptManager() {
             return;
           }
 
-          // Server-side validation field errors (400)
+          // Server-side validation errors (400)
           if (response.status >= 400 && response.status < 500 && response.status !== 429) {
             try {
               const data = await response.json();
               if (data.errors && typeof data.errors === "object") {
-                const clientFieldMessages: Record<string, string> = {
-                  name: "Please fill in your Name.",
-                  email: "Please fill in your Email.",
-                  phone: "Please fill in your Phone / WhatsApp.",
-                  service: "Please select the Required Service.",
-                  company: "Please enter your Company / Business Name.",
-                  message: "Please enter your Project Details.",
-                };
-                let hasFieldError = false;
-                for (const [field, messages] of Object.entries(data.errors)) {
+                for (const field of Object.keys(data.errors)) {
                   const input =
                     form.querySelector(`[name="${field}"]`) ||
                     (field === "message" ? form.querySelector('[name="details"]') : null);
-                  if (input && Array.isArray(messages) && messages.length > 0) {
-                    const span = document.createElement("span");
-                    span.className = "form-error";
-                    span.style.cssText = "color: #e53e3e; font-size: 0.85rem; display: block; margin-top: 4px;";
-                    span.textContent = clientFieldMessages[field] || "Please fill in this required field.";
-                    input.insertAdjacentElement("afterend", span);
-                    hasFieldError = true;
+                  if (input) {
+                    input.setAttribute("aria-invalid", "true");
+                    (input as HTMLElement).style.borderColor = "#e53e3e";
                   }
                 }
-                if (hasFieldError) return;
               }
             } catch {}
+
+            const valDiv = document.createElement("div");
+            valDiv.id = "formValidationError";
+            valDiv.className = "form-error";
+            valDiv.style.cssText =
+              "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
+            valDiv.textContent = "Please fill in your Name, Email, and select the Required Service.";
+            form.insertBefore(valDiv, form.firstChild);
+            return;
           }
 
-          // Error handling
-          let errorMessage = "Unable to submit form. Please contact us directly at +91 75101 09730 or via WhatsApp.";
+          // Error handling on 429, 503, or other error
           const errDiv = document.createElement("div");
           errDiv.id = "formFallbackError";
-          errDiv.style.cssText = "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
-          errDiv.innerHTML = `Unable to submit form. Please contact us directly at <a href="tel:+917510109730" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">+91 75101 09730</a> or via <a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">WhatsApp</a>.`;
+          errDiv.className = "form-error";
+          errDiv.style.cssText =
+            "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
+          errDiv.innerHTML = `We couldn't send your message just now. Please call <a href="tel:+917510109730" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">+91 75101 09730</a> or message us on <a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">WhatsApp</a>.`;
           form.insertBefore(errDiv, form.firstChild);
         } catch {
           if (submitBtn) {
@@ -265,8 +300,10 @@ export function ClientScriptManager() {
           }
           const errDiv = document.createElement("div");
           errDiv.id = "formFallbackError";
-          errDiv.style.cssText = "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
-          errDiv.innerHTML = `Unable to submit form. Please contact us directly at <a href="tel:+917510109730" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">+91 75101 09730</a> or via <a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">WhatsApp</a>.`;
+          errDiv.className = "form-error";
+          errDiv.style.cssText =
+            "padding: 12px 16px; margin-bottom: 16px; border-radius: 6px; background-color: rgba(229, 62, 62, 0.1); border: 1px solid rgba(229, 62, 62, 0.3); color: #e53e3e; font-size: 0.9rem; line-height: 1.5;";
+          errDiv.innerHTML = `We couldn't send your message just now. Please call <a href="tel:+917510109730" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">+91 75101 09730</a> or message us on <a href="https://wa.me/917510109730" target="_blank" rel="noopener noreferrer" style="color: #e53e3e; font-weight: 600; text-decoration: underline;">WhatsApp</a>.`;
           form.insertBefore(errDiv, form.firstChild);
         }
       });

@@ -9,7 +9,8 @@ export function ContactForm() {
   const [whatsAppLink, setWhatsAppLink] = useState("");
   const [selectedService, setSelectedService] = useState("");
   const [fallbackError, setFallbackError] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<Record<string, boolean>>({});
   const [renderTime, setRenderTime] = useState<number>(Date.now());
   const [referrerOnMount, setReferrerOnMount] = useState<string | null>(null);
 
@@ -36,7 +37,8 @@ export function ContactForm() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFallbackError(false);
-    setFieldErrors({});
+    setValidationError(null);
+    setInvalidFields({});
 
     const form = e.currentTarget;
     const formData = new FormData(form);
@@ -50,6 +52,16 @@ export function ContactForm() {
     const message = (formData.get("details") as string)?.trim() || null;
     const hp_field = (formData.get("hp_field") as string) || "";
     const elapsedMs = Date.now() - renderTime;
+
+    if (!name || !email || !service) {
+      const inv: Record<string, boolean> = {};
+      if (!name) inv.name = true;
+      if (!email) inv.email = true;
+      if (!service) inv.service = true;
+      setInvalidFields(inv);
+      setValidationError("Please fill in your Name, Email, and select the Required Service.");
+      return;
+    }
 
     const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
     const utmSource = urlParams?.get("utm_source") || null;
@@ -101,24 +113,17 @@ export function ContactForm() {
 
       if (response.status >= 400 && response.status < 500 && response.status !== 429) {
         setSubmitting(false);
-        const data = await response.json();
-        if (data.errors) {
-          const clientFieldMessages: Record<string, string> = {
-            name: "Please fill in your Name.",
-            email: "Please fill in your Email.",
-            phone: "Please fill in your Phone / WhatsApp.",
-            service: "Please select the Required Service.",
-            company: "Please enter your Company / Business Name.",
-            message: "Please enter your Project Details.",
-          };
-          const flat: Record<string, string> = {};
-          for (const k of Object.keys(data.errors)) {
-            flat[k] = clientFieldMessages[k] || "Please fill in this required field.";
+        try {
+          const data = await response.json();
+          if (data.errors && typeof data.errors === "object") {
+            const inv: Record<string, boolean> = {};
+            for (const k of Object.keys(data.errors)) {
+              inv[k] = true;
+            }
+            setInvalidFields(inv);
           }
-          setFieldErrors(flat);
-        } else if (data.error) {
-          setFieldErrors({ general: data.error });
-        }
+        } catch {}
+        setValidationError("Please fill in your Name, Email, and select the Required Service.");
         return;
       }
 
@@ -164,12 +169,9 @@ export function ContactForm() {
               required
               placeholder="e.g. Rahul Nambiar"
               className="form-control"
+              aria-invalid={invalidFields.name ? "true" : undefined}
+              style={invalidFields.name ? { borderColor: "#e53e3e" } : undefined}
             />
-            {fieldErrors.name && (
-              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
-                {fieldErrors.name}
-              </span>
-            )}
           </div>
 
           <div className="form-group">
@@ -183,12 +185,9 @@ export function ContactForm() {
               required
               placeholder="e.g. rahul@business.com"
               className="form-control"
+              aria-invalid={invalidFields.email ? "true" : undefined}
+              style={invalidFields.email ? { borderColor: "#e53e3e" } : undefined}
             />
-            {fieldErrors.email && (
-              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
-                {fieldErrors.email}
-              </span>
-            )}
           </div>
         </div>
 
@@ -201,12 +200,9 @@ export function ContactForm() {
               name="phone"
               placeholder="e.g. +91 75101 09730"
               className="form-control"
+              aria-invalid={invalidFields.phone ? "true" : undefined}
+              style={invalidFields.phone ? { borderColor: "#e53e3e" } : undefined}
             />
-            {fieldErrors.phone && (
-              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
-                {fieldErrors.phone}
-              </span>
-            )}
           </div>
 
           <div className="form-group">
@@ -217,12 +213,9 @@ export function ContactForm() {
               name="company"
               placeholder="e.g. Malabar Retail Co."
               className="form-control"
+              aria-invalid={invalidFields.company ? "true" : undefined}
+              style={invalidFields.company ? { borderColor: "#e53e3e" } : undefined}
             />
-            {fieldErrors.company && (
-              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
-                {fieldErrors.company}
-              </span>
-            )}
           </div>
         </div>
 
@@ -238,6 +231,8 @@ export function ContactForm() {
               className="form-control"
               value={selectedService}
               onChange={(e) => setSelectedService(e.target.value)}
+              aria-invalid={invalidFields.service ? "true" : undefined}
+              style={invalidFields.service ? { borderColor: "#e53e3e" } : undefined}
             >
               <option value="" disabled>
                 Select a service
@@ -257,11 +252,6 @@ export function ContactForm() {
                 Multi-Service Custom Package
               </option>
             </select>
-            {fieldErrors.service && (
-              <span className="form-error" style={{ color: "#e53e3e", fontSize: "0.85rem" }}>
-                {fieldErrors.service}
-              </span>
-            )}
           </div>
         </div>
 
@@ -316,10 +306,11 @@ export function ContactForm() {
           ></textarea>
         </div>
 
-        {/* Fallback error line on 429/503/network failure */}
-        {fallbackError && (
+        {/* Validation error on client/server 400 */}
+        {validationError && (
           <div
-            id="formFallbackError"
+            id="formValidationError"
+            className="form-error"
             style={{
               padding: "12px 16px",
               marginBottom: "16px",
@@ -331,14 +322,34 @@ export function ContactForm() {
               lineHeight: 1.5,
             }}
           >
-            Unable to submit form. Please contact us directly at{" "}
+            {validationError}
+          </div>
+        )}
+
+        {/* Fallback error line on 429/503/network failure */}
+        {fallbackError && (
+          <div
+            id="formFallbackError"
+            className="form-error"
+            style={{
+              padding: "12px 16px",
+              marginBottom: "16px",
+              borderRadius: "6px",
+              backgroundColor: "rgba(229, 62, 62, 0.1)",
+              border: "1px solid rgba(229, 62, 62, 0.3)",
+              color: "#e53e3e",
+              fontSize: "0.9rem",
+              lineHeight: 1.5,
+            }}
+          >
+            We couldn't send your message just now. Please call{" "}
             <a
               href="tel:+917510109730"
               style={{ color: "#e53e3e", fontWeight: 600, textDecoration: "underline" }}
             >
               +91 75101 09730
             </a>{" "}
-            or via{" "}
+            or message us on{" "}
             <a
               href="https://wa.me/917510109730"
               target="_blank"
