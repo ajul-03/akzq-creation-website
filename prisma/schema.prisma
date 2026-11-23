@@ -112,6 +112,8 @@ model Lead {
   utmSource       String?
   utmMedium       String?
   utmCampaign     String?
+  utmTerm         String?
+  utmContent      String?
   referrer        String?
   ipHash          String?
   userAgent       String?
