@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { z } from "zod";
+import net from "net";
 import { db } from "@/lib/db";
 import { hashIp } from "@/lib/privacy";
 import { sendLeadNotification } from "@/lib/notify";
@@ -138,9 +139,11 @@ function getClientIp(request: Request | NextRequest): {
   const forwarded = request.headers.get("x-forwarded-for");
   const firstForwardedIp = forwarded ? forwarded.split(",")[0].trim() : null;
   const rawIp = firstForwardedIp || request.headers.get("x-real-ip") || null;
-  const isUnknown = !rawIp;
-  const identifier = isUnknown ? "unknown-client-ip" : rawIp;
-  return { ip: rawIp, isUnknown, identifier };
+  // Validate: net.isIP returns 0 for invalid/non-IP strings, 4 or 6 for valid
+  const validIp = rawIp && net.isIP(rawIp) !== 0 ? rawIp : null;
+  const isUnknown = !validIp;
+  const identifier = isUnknown ? "unknown-client-ip" : validIp;
+  return { ip: validIp, isUnknown, identifier };
 }
 
 function isAllowedOrigin(
@@ -507,6 +510,10 @@ export async function POST(request: NextRequest) {
       payload.utmMedium || requestUrl.searchParams.get("utm_medium") || null;
     const utmCampaign =
       payload.utmCampaign || requestUrl.searchParams.get("utm_campaign") || null;
+    const utmTerm =
+      payload.utmTerm || requestUrl.searchParams.get("utm_term") || null;
+    const utmContent =
+      payload.utmContent || requestUrl.searchParams.get("utm_content") || null;
 
     let sanitizedReferrer: string | null = null;
     if (payload.referrer && payload.referrer.trim().length > 0) {
@@ -537,6 +544,8 @@ export async function POST(request: NextRequest) {
         utmSource: utmSource ? utmSource.slice(0, 200) : null,
         utmMedium: utmMedium ? utmMedium.slice(0, 200) : null,
         utmCampaign: utmCampaign ? utmCampaign.slice(0, 200) : null,
+        utmTerm: utmTerm ? utmTerm.slice(0, 200) : null,
+        utmContent: utmContent ? utmContent.slice(0, 200) : null,
         referrer: sanitizedReferrer ? sanitizedReferrer.slice(0, 200) : null,
         ipHash,
         userAgent,
