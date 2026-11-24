@@ -12,7 +12,7 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 |---|---|---|---|
 | `DATABASE_URL` | **Yes** | Neon pooled Postgres connection string with SSL (used by Prisma Client runtime) | `postgresql://user:pass@ep-pooler.neon.tech/neondb?sslmode=require` |
 | `DIRECT_URL` | **Yes** | Neon direct (non-pooled) connection string (MUST be used for migrations and schema operations) | `postgresql://user:pass@ep-direct.neon.tech/neondb?sslmode=require` |
-| `IP_HASH_SECRET` | **Yes** | High-entropy secret key for privacy-minded design (IP hashing); legal review of the notice and retention is the owner's responsibility (MUST be at least 32 characters) | `openssl rand -hex 32` |
+| `IP_HASH_SECRET` | **Yes** | Secret for HMAC-SHA256 IP hashing. IP addresses are stored only as HMAC hashes. The privacy notice, consent wording and data-retention period are the owner's responsibility. (MUST be at least 32 characters) | `openssl rand -hex 32` |
 | `NEXT_PUBLIC_SITE_URL` | **Yes** | Canonical public site URL (used for CORS and canonical tags) | `https://akzqcreation.com` |
 | `ALLOWED_ORIGINS` | Optional | Comma-separated list of additional allowed origins for `/api/leads`. Note: `www` subdomain should redirect to apex (`https://akzqcreation.com`) at DNS/host level; preview deployments are not allowed by default unless explicitly listed here | `https://preview.example.com` |
 | `RESEND_API_KEY` | Optional | API key for Resend email notifications (default: disabled if unset) | `re_123456789...` |
@@ -28,11 +28,13 @@ Configure these environment variables in your deployment platform (Vercel, AWS A
 
 ## 2. Security & Abuse Defense Guarantees
 
-1. **Zero Raw IP Storage (privacy-minded design (IP hashing); legal review of the notice and retention is the owner's responsibility)**:
+1. **Zero Raw IP Storage**:
+   - IP addresses are stored only as HMAC hashes. The privacy notice, consent wording and data-retention period are the owner's responsibility.
    - Client IP addresses are never written to the database.
    - All IPs are hashed using `crypto.createHmac("sha256", IP_HASH_SECRET).update(ip).digest("hex")`.
    - The route strictly enforces that `IP_HASH_SECRET` is set and at least 32 characters, and does not start with `"replace-with"`; if invalid, it aborts with HTTP 503 and never hashes with an empty or insecure key.
-   - For clients where no IP header is present, submissions are grouped into a shared `"unknown"` bucket with a stricter rate limit (max 2/hour, max 5/day).
+   - `x-forwarded-for` is trusted only on Vercel, which sets it itself; on other hosts configure the proxy to overwrite it.
+   - If no client-IP header is present, all visitors share the unknown bucket (2/hour, 5/day).
 
 2. **Zero PII in Audit Logs**:
    - `ActivityLog` captures actions such as `lead.created` and `lead.notify_failed`.
@@ -94,25 +96,24 @@ Follow this strict deployment order:
 
 6. **Step 6: Real Post-Deploy Verification**
    - Note: `npm run test:leads` uses a local embedded disposable Postgres database for integration testing; it is **NOT** a post-deployment verification check.
-   - For real post-deployment verification:
+   - For post-deployment verification, use a Vercel **PREVIEW** deployment URL with its own Neon database branch and `ALLOWED_ORIGINS` set to that preview origin (e.g. `https://akzq-creation-preview.vercel.app`):
      1. **Verify GET 405 Method Not Allowed**:
         ```bash
-        curl -i -X GET https://akzqcreation.com/api/leads
+        curl -i -X GET https://akzq-creation-preview.vercel.app/api/leads
         ```
         Confirm it returns `HTTP/1.1 405 Method Not Allowed` with `Allow: POST`.
      2. **Verify Contact Form Load**:
-        Open `https://akzqcreation.com/contact` in a browser. Confirm the page and form render with 0 console errors and 0 CSP violations.
-     3. **Submit One Test Lead & Delete It**:
-        Submit one test lead ONLY to a non-production Neon branch (never to production):
+        Open `https://akzq-creation-preview.vercel.app/contact` in a browser. Confirm the page and form render with 0 console errors and 0 CSP violations.
+     3. **Submit One Test Lead (All Required Fields) via Preview Origin**:
         ```bash
-        curl -i -X POST https://akzqcreation.com/api/leads \
+        curl -i -X POST https://akzq-creation-preview.vercel.app/api/leads \
           -H "Content-Type: application/json" \
-          -H "Origin: https://akzqcreation.com" \
+          -H "Origin: https://akzq-creation-preview.vercel.app" \
           -d '{"name":"Post-Deploy Smoke Test","email":"smoketest@example.com","service":"Branding & Identity","elapsedMs":3500}'
         ```
         Confirm response is `HTTP/1.1 201 Created` with body `{"ok":true}`.
-     4. **Manual Cleanup SQL**:
-        Remove the smoke test record from the database:
+     4. **Manual Cleanup SQL (on Preview Neon branch)**:
+        Remove the smoke test record from the preview database branch:
         ```sql
         DELETE FROM "ActivityLog" WHERE "entityId" IN (SELECT id FROM "Lead" WHERE email = 'smoketest@example.com');
         DELETE FROM "Lead" WHERE email = 'smoketest@example.com';
@@ -128,12 +129,12 @@ In `package.json`:
   "effect": "^3.22.5"
 }
 ```
-This override resolves security vulnerability **GHSA-7589-6fvf-x4pw** in the `effect` package, which is pulled in transitively by `@prisma/client`. Once Prisma releases an upstream version of `@prisma/client` that depends on `effect >= 3.22.5`, this override can and should be safely removed.
+This override resolves security vulnerability **GHSA-7589-6fvf-x4pw** in the `effect` package. Note: it comes from the `prisma` CLI via `@prisma/config` (dev dependency; verify with `npm ls effect`). Once Prisma releases an upstream version of `@prisma/config` that resolves `effect >= 3.22.5`, this override can and should be safely removed.
 
 ---
 
 ## 5. Dependency Justifications
 
 - **`zod`**: Zod is used exclusively for runtime schema validation and sanitization of incoming lead capture payloads, ensuring strict type safety and control character rejection before database persistence.
-- **`dotenv`**: Loaded in `prisma.config.ts` to read `.env` credentials when running Prisma CLI commands (e.g. `prisma migrate status`) in standalone shells without external environment exports.
+- **`dotenv`**: Pinned exact devDependency (`17.4.2`) loaded in `prisma.config.ts` to read `.env` credentials when running Prisma CLI commands (e.g. `prisma migrate status`) in standalone shells without external environment exports.
 - **`pg` & `@types/pg`**: Direct dependency required by `@prisma/adapter-pg` for connection pooling, pool size capping (max 3), query timeout enforcement (10000ms), and idle connection lifecycle management.
