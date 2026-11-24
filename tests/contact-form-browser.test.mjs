@@ -526,6 +526,11 @@ async function runBrowserTest() {
 
     // --- Subcase (a): Submit empty form -> client-side legacy string ---
     console.log('\n[T1 Subcase a: Empty name/email/service -> legacy string]');
+    // Disable native HTML5 required-field validation so React onSubmit fires
+    await page.evaluate(() => {
+      const form = document.getElementById("agencyQuoteForm");
+      if (form) form.noValidate = true;
+    });
     await page.click('button[type="submit"]', { noWaitAfter: true });
     await page.waitForTimeout(400);
 
