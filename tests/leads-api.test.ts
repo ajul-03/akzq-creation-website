@@ -1420,14 +1420,28 @@ async function runSuite() {
 
     const unknownHash = hashIp("unknown-client-ip", TEST_SECRET);
 
-    // Purge all prior unknown-bucket leads so the rate-limit window starts at 0.
-    // Earlier tests also land in the unknown bucket (no x-forwarded-for), which would
-    // exhaust the stricter 2/hour unknown limit before we get here.
+    // Purge prior unknown-bucket leads so the rate-limit window starts at 0.
+    // Failure root cause explanation:
+    // Earlier in TEST 3 (Origin Hardening), subcase 4 (Listed Extra Origin: preview@example.com)
+    // and subcase 5 (Absent Origin & Referer: direct@example.com) both submitted valid leads
+    // without x-forwarded-for or x-real-ip headers. Those 2 requests were hashed with
+    // identifier = "unknown-client-ip" and inserted into the Lead table, which reached
+    // the stricter rate limit (2 per hour) for the unknown bucket.
+    // (Note: honeypot and fast-submit tests insert no rows, so they did not contribute.)
     const deleted = await prisma.lead.deleteMany({ where: { ipHash: unknownHash } });
-    console.log(`\nPurged ${deleted.count} prior unknown-bucket lead(s) to reset rate-limit window.`);
+    console.log(`\nPurged ${deleted.count} prior unknown-bucket lead(s) (created by TEST 3 subcases 4 & 5) to reset rate-limit window.`);
     // Also pre-delete test emails to prevent dedupe collisions on re-run.
     await prisma.lead.deleteMany({
-      where: { email: { in: ["invalid.ip@example.com", "empty.ip@example.com", "valid.ipv4@example.com"] } },
+      where: {
+        email: {
+          in: [
+            "invalid.ip@example.com",
+            "empty.ip@example.com",
+            "valid.ipv4@example.com",
+            "multi.ip@example.com",
+          ],
+        },
+      },
     });
 
     // (a) Invalid IP string "not-an-ip" -> unknown bucket
@@ -1499,7 +1513,29 @@ async function runSuite() {
     console.log(`Expected HMAC hash: ${expectedValidIpv4Hash}`);
     console.log(`Does NOT equal unknownHash: ${validIpv4Lead.ipHash !== unknownHash}`);
 
-    console.log("✓ TEST 13 PASSED: Invalid/empty IPs -> unknown bucket; valid IPv4 -> known bucket.\n");
+    // (d) Multiple IPs in x-forwarded-for: "203.0.113.195, 10.0.0.1" -> uses first valid IP 203.0.113.195
+    console.log('\n[Subcase d: x-forwarded-for "203.0.113.195, 10.0.0.1" -> uses 203.0.113.195]');
+    const multiTestIp = "203.0.113.195";
+    const resMultiIp = await requestApi({
+      body: { name: "Multi IP User", email: "multi.ip@example.com", elapsedMs: 3000 },
+      headers: { "x-forwarded-for": "203.0.113.195, 10.0.0.1" },
+    });
+    console.log(`Status: ${resMultiIp.status}`);
+    assert.strictEqual(resMultiIp.status, 201);
+
+    const multiIpLead = await prisma.lead.findFirst({
+      where: { email: "multi.ip@example.com" },
+    });
+    assert.ok(multiIpLead);
+    const expectedMultiHash = hashIp(multiTestIp, TEST_SECRET);
+    assert.strictEqual(
+      multiIpLead.ipHash,
+      expectedMultiHash,
+      `"203.0.113.195, 10.0.0.1" must use first IP and hash to ${expectedMultiHash}`
+    );
+    console.log(`ipHash for "203.0.113.195, 10.0.0.1": ${multiIpLead.ipHash} (matches expected: true)`);
+
+    console.log("✓ TEST 13 PASSED: Invalid/empty IPs -> unknown bucket; valid IPv4 and multi-IP -> known bucket.\n");
 
     console.log("\n========================================================");
     console.log("ALL REAL PRODUCTION-SERVER LEADS API TESTS PASSED CLEANLY");
