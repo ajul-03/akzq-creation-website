@@ -1418,10 +1418,17 @@ async function runSuite() {
   const isUnknown = !validIp;
   const identifier = isUnknown ? "unknown-client-ip" : validIp;`);
 
-    // Clear existing unknown-bucket leads to get a fresh count baseline
     const unknownHash = hashIp("unknown-client-ip", TEST_SECRET);
-    const baselineUnknownCount = await prisma.lead.count({ where: { ipHash: unknownHash } });
-    console.log(`\nBaseline unknown-bucket lead count: ${baselineUnknownCount}`);
+
+    // Purge all prior unknown-bucket leads so the rate-limit window starts at 0.
+    // Earlier tests also land in the unknown bucket (no x-forwarded-for), which would
+    // exhaust the stricter 2/hour unknown limit before we get here.
+    const deleted = await prisma.lead.deleteMany({ where: { ipHash: unknownHash } });
+    console.log(`\nPurged ${deleted.count} prior unknown-bucket lead(s) to reset rate-limit window.`);
+    // Also pre-delete test emails to prevent dedupe collisions on re-run.
+    await prisma.lead.deleteMany({
+      where: { email: { in: ["invalid.ip@example.com", "empty.ip@example.com", "valid.ipv4@example.com"] } },
+    });
 
     // (a) Invalid IP string "not-an-ip" -> unknown bucket
     console.log('\n[Subcase a: x-forwarded-for "not-an-ip" -> unknown bucket]');
