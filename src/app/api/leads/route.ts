@@ -510,10 +510,6 @@ export async function POST(request: NextRequest) {
       payload.utmMedium || requestUrl.searchParams.get("utm_medium") || null;
     const utmCampaign =
       payload.utmCampaign || requestUrl.searchParams.get("utm_campaign") || null;
-    const utmTerm =
-      payload.utmTerm || requestUrl.searchParams.get("utm_term") || null;
-    const utmContent =
-      payload.utmContent || requestUrl.searchParams.get("utm_content") || null;
 
     let sanitizedReferrer: string | null = null;
     if (payload.referrer && payload.referrer.trim().length > 0) {
@@ -544,8 +540,6 @@ export async function POST(request: NextRequest) {
         utmSource: utmSource ? utmSource.slice(0, 200) : null,
         utmMedium: utmMedium ? utmMedium.slice(0, 200) : null,
         utmCampaign: utmCampaign ? utmCampaign.slice(0, 200) : null,
-        utmTerm: utmTerm ? utmTerm.slice(0, 200) : null,
-        utmContent: utmContent ? utmContent.slice(0, 200) : null,
         referrer: sanitizedReferrer ? sanitizedReferrer.slice(0, 200) : null,
         ipHash,
         userAgent,

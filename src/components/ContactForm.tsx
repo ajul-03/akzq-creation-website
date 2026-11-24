@@ -67,8 +67,6 @@ export function ContactForm() {
     const utmSource = urlParams?.get("utm_source") || null;
     const utmMedium = urlParams?.get("utm_medium") || null;
     const utmCampaign = urlParams?.get("utm_campaign") || null;
-    const utmTerm = urlParams?.get("utm_term") || null;
-    const utmContent = urlParams?.get("utm_content") || null;
     const referrer = referrerOnMount;
 
     setSubmitting(true);
@@ -90,8 +88,6 @@ export function ContactForm() {
           utmSource,
           utmMedium,
           utmCampaign,
-          utmTerm,
-          utmContent,
           referrer,
           hp_field,
           elapsedMs,
