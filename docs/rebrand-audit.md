@@ -686,3 +686,377 @@ Get-ChildItem "assets/css" -Recurse | ForEach-Object { … Select-String -Patter
 
 **Command:** `git grep -n -i "table of contents\|related article\|related post\|author" -- src/`  
 **Result:** Only `notify.ts:55 → Authorization` (Bearer token header) — no blog features.
+
+---
+
+## R0-FIX — Corrections and Additions
+
+*Issued 2026-11-26. Amends the original R0 audit above on four points.*
+
+---
+
+### FIX-1: Merge-Base, Log, and Diff Verification
+
+**Correction to §1 header:** The original doc stated the base commit as `84bf7dc7e89b4d515e56bf92b62b865ea323e0ea` without running `git merge-base` to confirm it. That is now confirmed.
+
+```
+$ git merge-base HEAD feat/lead-capture
+84bf7dc7e89b4d515e56bf92b62b865ea323e0ea
+```
+
+The merge-base equals the `feat/lead-capture` HEAD exactly — `feat/rebrand-audit` was branched directly from that tip with no intervening commits on either side.
+
+```
+$ git log --oneline -3 84bf7dc7e89b4d515e56bf92b62b865ea323e0ea
+84bf7dc docs: document preview smoke test, effect devDependency source, privacy wording, and proxy trust
+f63c8f1 build(deps): pin dotenv 17.4.2 exact in devDependencies
+4c1ed68 test(leads): add multi-IP x-forwarded-for subcase and document TEST 3 rate-limit root cause
+```
+
+```
+$ git diff --name-only 84bf7dc7e89b4d515e56bf92b62b865ea323e0ea..HEAD
+docs/rebrand-audit.md
+```
+
+**Conclusion:** Only `docs/rebrand-audit.md` differs between the merge-base and the current branch HEAD. Clean.
+
+---
+
+### FIX-2: public/ Asset List Reconciliation
+
+**Correction to §4:** The original audit did not run `git ls-files public | sort` and instead reconstructed the asset list by directory listing alone. The authoritative tracked list is:
+
+```
+$ git ls-files public | sort
+public/assets/css/animations.css
+public/assets/css/style.css
+public/assets/images/favicon.svg
+public/assets/images/hero-dashboard.svg
+public/assets/images/logo.svg
+public/assets/images/logo-white.svg
+public/assets/images/og-share.png
+public/assets/js/contact.js
+public/assets/js/faq.js
+public/assets/js/main.js
+public/assets/js/portfolio.js
+```
+
+**11 files total.** No `portfolio/` subdirectory, no `*.jpg` files, no `favicon.ico`.
+
+**Disk verification (PowerShell):**
+
+```
+$ Get-ChildItem public\assets\images | Select-Object Name, Length
+favicon.svg        383 bytes   (last modified 2026-08-09)
+hero-dashboard.svg 8,180 bytes (last modified 2026-08-09)
+logo-white.svg     775 bytes   (last modified 2026-08-09)
+logo.svg           752 bytes   (last modified 2026-08-09)
+og-share.png       318,208 bytes (last modified 2026-11-17)
+
+$ Test-Path public\assets\images\favicon.ico  → False
+$ Test-Path public\assets\images\portfolio    → False
+$ Get-ChildItem public -Recurse -Filter *.jpg → (no output — 0 files)
+```
+
+**Reconciliation with `check-import-casing.mjs`:** The casing script (`scripts/check-import-casing.mjs`) does not assert that `portfolio/*.jpg` or `favicon.ico` exist. It scans all tracked source files for `/assets/…` path strings and validates each against `git ls-files`. If any source file referenced a non-existent asset, the script would emit `[FAIL ASSET]` and exit 1. The grep for `portfolio.*\.jpg` and `favicon\.ico` across all tracked files returned **0 results** — no source file references these paths. There is no discrepancy.
+
+**Corrected §4.1 table (on-disk sizes authoritative):**
+
+| file | format | size (bytes) | rendered size | notes |
+|---|---|---|---|---|
+| `favicon.svg` | SVG | 383 | vector, 64×64 viewport | renders brand mark (`#FF6A2B` bars on `#15151A` rect) |
+| `hero-dashboard.svg` | SVG | 8,180 | vector | generic growth chart illustration; no AKZQ text |
+| `logo-white.svg` | SVG | 775 | 170×38 px (rendered) | brand mark, dark-bg variant |
+| `logo.svg` | SVG | 752 | 180×42 px (rendered) | brand mark, light-bg variant |
+| `og-share.png` | PNG | 318,208 | 1200×630 px | OG/Twitter social share card |
+
+The original audit stated `og-share.png` as 311,208 B / 304 KB. Disk measurement is **318,208 bytes (310 KB)**. Corrected above.
+
+**public/assets also contains CSS and JS files** (not in §4 previously):
+
+| file | size | role |
+|---|---|---|
+| `public/assets/css/style.css` | shared with `assets/css/style.css` | design system |
+| `public/assets/css/animations.css` | shared | micro-animations |
+| `public/assets/js/main.js` | legacy header/mobile drawer | served to legacy HTML pages |
+| `public/assets/js/faq.js` | legacy FAQ accordion | served to legacy HTML pages |
+| `public/assets/js/portfolio.js` | legacy portfolio filter/modal | served to legacy HTML pages |
+| `public/assets/js/contact.js` | legacy contact form / WhatsApp dispatch | served to legacy HTML pages |
+
+These JS files are referenced only by the legacy `.html` pages via `<script src="/assets/js/…">`. The Next.js app does not import them — their logic is re-implemented in `ClientScriptManager.tsx` and `PortfolioFilter.tsx`.
+
+---
+
+### FIX-3: Domain Identifier Hard-Coded vs Env-Derived Inventory
+
+**Correction to §2:** The original audit incorrectly listed `src/app/sitemap.ts` and `src/app/robots.ts` as "(via NEXT_PUBLIC_SITE_URL)" — that is **wrong**. Both files use a **hard-coded string literal**, not the env variable. Full corrected inventory follows.
+
+**Scope:** `src/`, `next.config.js`, `prisma/`, `public/` (legacy `.html` files excluded).
+
+**Command run:**
+```
+git grep -n "akzqcreation\.com\|hello@akzqcreation" \
+  -- src/ next.config.js prisma/ public/
+```
+
+#### Hard-coded literal strings (the domain is a string constant in source code)
+
+| file:line | value | context | build-time or request-time |
+|---|---|---|---|
+| `src/app/layout.tsx:24` | `new URL("https://akzqcreation.com")` | `metadataBase` | build-time (compiled into HTML) |
+| `src/app/layout.tsx:37` | `"https://akzqcreation.com"` | OG `url` | build-time |
+| `src/app/layout.tsx:41` | `"https://akzqcreation.com/assets/images/og-share.png"` | OG `images[0].url` | build-time |
+| `src/app/layout.tsx:52` | `"https://akzqcreation.com/assets/images/og-share.png"` | Twitter `images[0]` | build-time |
+| `src/app/page.tsx:7` | `"https://akzqcreation.com"` | `canonical` | build-time |
+| `src/app/page.tsx:12` | `"https://akzqcreation.com"` | OG `url` | build-time |
+| `src/app/page.tsx:15` | `"https://akzqcreation.com/assets/images/og-share.png"` | OG image | build-time |
+| `src/app/page.tsx:35` | `"https://akzqcreation.com/assets/images/logo.svg"` | JSON-LD `image` | build-time |
+| `src/app/page.tsx:50` | `"https://akzqcreation.com"` | JSON-LD `url` | build-time |
+| `src/app/about/page.tsx:7,12,15` | `"https://akzqcreation.com/about"` etc. | canonical, OG url, OG image | build-time |
+| `src/app/blog/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/blog-cost-of-seo-kerala/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/branding-identity/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/digital-marketing-seo/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/faq/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/kannur/page.tsx:7,12,15,26,41,56` | same pattern + JSON-LD `image` and `url` | canonical, OG, Twitter, JSON-LD | build-time |
+| `src/app/local-seo/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/media-content-production/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/portfolio/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/services/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/thalassery/page.tsx:7,12,15,26,41,52` | same pattern + JSON-LD `image` and `url` | canonical, OG, Twitter, JSON-LD | build-time |
+| `src/app/web-design-development/page.tsx:7,12,15` | same pattern | canonical, OG url, OG image | build-time |
+| `src/app/sitemap.ts:4` | `const baseUrl = "https://akzqcreation.com"` | sitemap `<loc>` base | **build-time** (SSG/ISR); NOT from env |
+| `src/app/robots.ts:9` | `"https://akzqcreation.com/sitemap.xml"` | robots `Sitemap:` directive | **build-time**; NOT from env |
+| `next.config.js:37` | `"img-src 'self' data: https://akzqcreation.com"` | CSP `img-src` directive | **request-time** (HTTP header set per-response), but the value is a static literal in the config |
+| `src/components/Footer.tsx:20` | `hello@akzqcreation.com` (Thalassery route NAP) | visible footer email text | build-time (HTML baked into route) |
+| `src/components/Footer.tsx:25` | `hello@akzqcreation.com` (/contact route NAP) | visible footer email text | build-time |
+
+#### Env-derived at **request time** (reads `process.env` on the server per request, not inlined)
+
+| file:line | env variable | use |
+|---|---|---|
+| `src/app/api/leads/route.ts:254` | `process.env.NEXT_PUBLIC_SITE_URL` | CORS origin allowlist — the domain used to build the allowed-origin set for the `/api/leads` POST handler |
+| `src/app/api/leads/route.ts:287` | `process.env.ALLOWED_ORIGINS` | Additional comma-separated allowed origins |
+
+> **Important note on `NEXT_PUBLIC_*`:** Variables prefixed `NEXT_PUBLIC_` are inlined by the Next.js compiler into client-side JavaScript bundles at build time. However, `NEXT_PUBLIC_SITE_URL` in this codebase is **only read server-side** in `src/app/api/leads/route.ts` via `process.env.NEXT_PUBLIC_SITE_URL`. It is **never referenced** in any client component or page file. The 13 page `page.tsx` files and `sitemap.ts`/`robots.ts` all use **hard-coded string literals** — they do not read `NEXT_PUBLIC_SITE_URL`. Changing that env var alone does **not** update canonical tags, OG URLs, JSON-LD, the sitemap, or robots.
+
+**Consequence for the rebrand:** Every canonical URL, OG URL, JSON-LD URL, sitemap entry, robots sitemap pointer, and CSP `img-src` directive requires a **source code edit** in addition to the env var change. The env var change alone is insufficient.
+
+---
+
+### FIX-4: `.env.verify_tmp` — Origin, Mechanism, and Gitignore Gap
+
+**Correction to §1 (git status):** The original audit noted `?? .env.verify_tmp` without explanation. This section provides the full analysis.
+
+#### What creates it
+
+`scripts/verify-all.mjs` — the `npm run verify` pipeline runner. Specifically lines 93–96:
+
+```js
+// verify-all.mjs lines 92–96
+let movedEnv = false;
+if (step.name === "build" && fs.existsSync(".env")) {
+  fs.renameSync(".env", ".env.verify_tmp");  // ← renames .env
+  movedEnv = true;
+}
+```
+
+And lines 113–116 (the `finally` block that restores it):
+
+```js
+} finally {
+  if (movedEnv && fs.existsSync(".env.verify_tmp")) {
+    fs.renameSync(".env.verify_tmp", ".env");  // ← renames back
+  }
+}
+```
+
+#### Why it temporarily renames `.env`
+
+The `build` step must run with empty `DATABASE_URL`, `DIRECT_URL`, and `TEST_DATABASE_URL` (set to `""` in `step.env`) to prove the Next.js build is not database-dependent at compile time. If `.env` were left in place, dotenv would load real connection strings into the build process environment, potentially allowing accidental DB calls during static generation or masking missing-env build errors.
+
+By renaming `.env` → `.env.verify_tmp` before the build and back afterwards (in a `finally` block), the script ensures the real credentials are physically absent from the filesystem during the build step.
+
+#### Why `.env.verify_tmp` currently exists as an untracked file
+
+The `npm run verify` process was interrupted (crash, Ctrl+C, or watchdog timeout) **after** the rename on line 94 but **before** the `finally` block on line 115 could execute. As a result, `.env` was moved to `.env.verify_tmp` and was never restored. The real `.env` file is therefore currently **absent** from disk — only `.env.verify_tmp` holds the real credentials.
+
+> The contents of `.env.verify_tmp` are **not printed** here per the audit scope. To restore normal operation: `Rename-Item .env.verify_tmp .env`.
+
+#### Why it is not gitignored
+
+`.gitignore` ignores `.env`, `.env*.local`, `.env.production`, `.env.development`, and `!.env.example`. It does **not** include `.env.verify_tmp` or the pattern `*.verify_tmp`. This is a gap: if the restore step fails (crash, CI timeout), the temp file would be committed if someone ran `git add .` without checking status first. It should be added to `.gitignore`:
+
+```
+.env.verify_tmp
+```
+
+(This change is **not implemented** in this branch — the R0 scope is read-only inventory only.)
+
+---
+
+## Appendix — R0-FIX Raw Command Output
+
+### Appendix F: Merge-Base and Diff Commands
+
+```
+$ git merge-base HEAD feat/lead-capture
+84bf7dc7e89b4d515e56bf92b62b865ea323e0ea
+
+$ git log --oneline -3 84bf7dc7e89b4d515e56bf92b62b865ea323e0ea
+84bf7dc docs: document preview smoke test, effect devDependency source, privacy wording, and proxy trust
+f63c8f1 build(deps): pin dotenv 17.4.2 exact in devDependencies
+4c1ed68 test(leads): add multi-IP x-forwarded-for subcase and document TEST 3 rate-limit root cause
+
+$ git diff --name-only 84bf7dc7e89b4d515e56bf92b62b865ea323e0ea..HEAD
+docs/rebrand-audit.md
+```
+
+### Appendix G: `git ls-files public | sort` and Disk File Check
+
+```
+$ git ls-files public | sort
+public/assets/css/animations.css
+public/assets/css/style.css
+public/assets/images/favicon.svg
+public/assets/images/hero-dashboard.svg
+public/assets/images/logo.svg
+public/assets/images/logo-white.svg
+public/assets/images/og-share.png
+public/assets/js/contact.js
+public/assets/js/faq.js
+public/assets/js/main.js
+public/assets/js/portfolio.js
+
+$ Get-ChildItem public\assets\images | Select-Object Name, Length, LastWriteTime
+
+Name               Length LastWriteTime
+----               ------ -------------
+favicon.svg           383 09-08-2026 23:48:36
+hero-dashboard.svg   8180 09-08-2026 23:48:47
+logo-white.svg        775 09-08-2026 23:48:32
+logo.svg              752 09-08-2026 23:48:29
+og-share.png       318208 17-11-2026 15:30:21
+
+$ Test-Path public\assets\images\favicon.ico
+False
+
+$ Test-Path public\assets\images\portfolio
+False
+
+$ Get-ChildItem public -Recurse -Filter *.jpg
+(no output)
+
+$ git grep -n -i "portfolio.*\.jpg\|favicon\.ico" -- .
+(exit 1 — no matches)
+```
+
+### Appendix H: Domain Identifier Grep (src/, next.config.js, prisma/, public/)
+
+```
+$ git grep -n "akzqcreation\.com\|hello@akzqcreation" \
+    -- src/ next.config.js prisma/ public/
+
+next.config.js:37:              "img-src 'self' data: https://akzqcreation.com",
+src/app/about/page.tsx:7:    canonical: "https://akzqcreation.com/about",
+src/app/about/page.tsx:12:    url: "https://akzqcreation.com/about",
+src/app/about/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/blog-cost-of-seo-kerala/page.tsx:7:    canonical: "https://akzqcreation.com/blog-cost-of-seo-kerala",
+src/app/blog-cost-of-seo-kerala/page.tsx:12:    url: "https://akzqcreation.com/blog-cost-of-seo-kerala",
+src/app/blog-cost-of-seo-kerala/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/blog/page.tsx:7:    canonical: "https://akzqcreation.com/blog",
+src/app/blog/page.tsx:12:    url: "https://akzqcreation.com/blog",
+src/app/blog/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/branding-identity/page.tsx:7:    canonical: "https://akzqcreation.com/branding-identity",
+src/app/branding-identity/page.tsx:12:    url: "https://akzqcreation.com/branding-identity",
+src/app/branding-identity/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/digital-marketing-seo/page.tsx:7:    canonical: "https://akzqcreation.com/digital-marketing-seo",
+src/app/digital-marketing-seo/page.tsx:12:    url: "https://akzqcreation.com/digital-marketing-seo",
+src/app/digital-marketing-seo/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/faq/page.tsx:7:    canonical: "https://akzqcreation.com/faq",
+src/app/faq/page.tsx:12:    url: "https://akzqcreation.com/faq",
+src/app/faq/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/kannur/page.tsx:7:    canonical: "https://akzqcreation.com/kannur",
+src/app/kannur/page.tsx:12:    url: "https://akzqcreation.com/kannur",
+src/app/kannur/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/kannur/page.tsx:26:    images: ["https://akzqcreation.com/assets/images/og-share.png"],
+src/app/kannur/page.tsx:41:            "image": "https://akzqcreation.com/assets/images/logo.svg",
+src/app/kannur/page.tsx:56:            "url": "https://akzqcreation.com/kannur",
+src/app/layout.tsx:24:  metadataBase: new URL("https://akzqcreation.com"),
+src/app/layout.tsx:37:    url: "https://akzqcreation.com",
+src/app/layout.tsx:41:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/layout.tsx:52:    images: ["https://akzqcreation.com/assets/images/og-share.png"],
+src/app/local-seo/page.tsx:7:    canonical: "https://akzqcreation.com/local-seo",
+src/app/local-seo/page.tsx:12:    url: "https://akzqcreation.com/local-seo",
+src/app/local-seo/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/media-content-production/page.tsx:7:    canonical: "https://akzqcreation.com/media-content-production",
+src/app/media-content-production/page.tsx:12:    url: "https://akzqcreation.com/media-content-production",
+src/app/media-content-production/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/page.tsx:7:    canonical: "https://akzqcreation.com",
+src/app/page.tsx:12:    url: "https://akzqcreation.com",
+src/app/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/page.tsx:35:            "image": "https://akzqcreation.com/assets/images/logo.svg",
+src/app/page.tsx:50:            "url": "https://akzqcreation.com",
+src/app/portfolio/page.tsx:7:    canonical: "https://akzqcreation.com/portfolio",
+src/app/portfolio/page.tsx:12:    url: "https://akzqcreation.com/portfolio",
+src/app/portfolio/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/robots.ts:9:    sitemap: "https://akzqcreation.com/sitemap.xml",
+src/app/services/page.tsx:7:    canonical: "https://akzqcreation.com/services",
+src/app/services/page.tsx:12:    url: "https://akzqcreation.com/services",
+src/app/services/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/sitemap.ts:4:  const baseUrl = "https://akzqcreation.com";
+src/app/thalassery/page.tsx:7:    canonical: "https://akzqcreation.com/thalassery",
+src/app/thalassery/page.tsx:12:    url: "https://akzqcreation.com/thalassery",
+src/app/thalassery/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/app/thalassery/page.tsx:26:    images: ["https://akzqcreation.com/assets/images/og-share.png"],
+src/app/thalassery/page.tsx:41:            "image": "https://akzqcreation.com/assets/images/logo.svg",
+src/app/thalassery/page.tsx:52:            "url": "https://akzqcreation.com/thalassery",
+src/app/web-design-development/page.tsx:7:    canonical: "https://akzqcreation.com/web-design-development",
+src/app/web-design-development/page.tsx:12:    url: "https://akzqcreation.com/web-design-development",
+src/app/web-design-development/page.tsx:15:        url: "https://akzqcreation.com/assets/images/og-share.png",
+src/components/Footer.tsx:20:  "/thalassery": "…<p>Email: hello@akzqcreation.com</p>…"
+src/components/Footer.tsx:25:  "/contact":    "…<p>Email: hello@akzqcreation.com</p>…"
+
+$ git grep -n "NEXT_PUBLIC_SITE_URL\|process\.env\." -- src/app/api/leads/route.ts
+src/app/api/leads/route.ts:254:  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+src/app/api/leads/route.ts:256:    console.error("Configuration error: NEXT_PUBLIC_SITE_URL environment variable is missing.");
+src/app/api/leads/route.ts:274:    console.error(`Configuration error: NEXT_PUBLIC_SITE_URL is invalid ('${siteUrl}'):`, err);
+src/app/api/leads/route.ts:287:  if (!isAllowedOrigin(targetHeader, siteUrlOrigin, process.env.ALLOWED_ORIGINS)) {
+src/app/api/leads/route.ts:346:  const secret = process.env.IP_HASH_SECRET;
+src/app/api/leads/route.ts:569:      process.env.RESEND_API_KEY &&
+src/app/api/leads/route.ts:570:      process.env.LEAD_NOTIFICATION_TO &&
+src/app/api/leads/route.ts:571:      process.env.LEAD_NOTIFICATION_FROM
+```
+
+### Appendix I: `git status --short` and `.gitignore` Content
+
+```
+$ git status --short
+?? .env.verify_tmp
+
+$ Get-Content .gitignore
+node_modules/
+.next/
+dist/
+build/
+.vercel/
+
+# Environment files
+.env
+.env*.local
+.env.production
+.env.development
+!.env.example
+
+# Next.js types
+next-env.d.ts
+*.tsbuildinfo
+
+# OS & Logs
+Thumbs.db
+.DS_Store
+*.log
+.test-pg-data/
+```
+
+`.env.verify_tmp` matches none of the patterns above. `.env*.local` requires the literal suffix `.local`; `.env.verify_tmp` ends in `.verify_tmp`, which does not match. The gap means the temp file would be staged by an unguarded `git add .`.
